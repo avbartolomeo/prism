@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ContextFilter } from './context-filter'
-import type { McpTool } from '@prism-mcp/types'
+import type { McpTool } from 'prism-mcp-types'
 import pino from 'pino'
 
 const logger = pino({ level: 'silent' })

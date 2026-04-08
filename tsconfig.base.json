@@ -14,10 +14,10 @@
     "declarationMap": true,
     "sourceMap": true,
     "paths": {
-      "@prism-mcp/types": ["./packages/types/src"],
-      "@prism-mcp/proxy": ["./packages/proxy/src"],
+      "prism-mcp-types": ["./packages/types/src"],
+      "prism-mcp-proxy": ["./packages/proxy/src"],
       "prism-mcp": ["./packages/cli/src"],
-      "@prism-mcp/dashboard": ["./packages/dashboard/src"]
+      "prism-mcp-dashboard": ["./packages/dashboard/src"]
     }
   },
   "exclude": ["node_modules", "dist"]

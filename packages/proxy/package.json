@@ -1,5 +1,5 @@
 {
-  "name": "@prism-mcp/proxy",
+  "name": "prism-mcp-proxy",
   "version": "0.1.0",
   "description": "Core MCP proxy engine for Prism",
   "main": "./dist/index.js",
@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@prism-mcp/types": "*",
+    "prism-mcp-types": "*",
     "better-sqlite3": "^12.8.0",
     "express": "^5.2.1",
     "pino": "^9.0.0"

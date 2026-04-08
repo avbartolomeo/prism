@@ -1,4 +1,4 @@
-import type { TraceRecord, SessionSummary } from '@prism-mcp/types'
+import type { TraceRecord, SessionSummary } from 'prism-mcp-types'
 import Database from 'better-sqlite3'
 import crypto from 'crypto'
 import pino from 'pino'

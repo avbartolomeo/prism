@@ -1,5 +1,5 @@
-import type { Result, McpServerConfig, McpTool } from '@prism-mcp/types'
-import { ok, err } from '@prism-mcp/types'
+import type { Result, McpServerConfig, McpTool } from 'prism-mcp-types'
+import { ok, err } from 'prism-mcp-types'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import pino from 'pino'
