@@ -33,6 +33,7 @@ program
     const proxy = new PrismProxy({
       servers: config.servers,
       maxTokenBudget: config.maxTokenBudget,
+      tracePath: config.tracePath,
       logger,
     })
 
