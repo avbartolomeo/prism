@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
-import { PrismProxy } from '@prism/proxy'
+import { PrismProxy, DashboardServer } from '@prism/proxy'
 import { loadConfig } from './config'
 import pino from 'pino'
 
@@ -16,7 +16,11 @@ program
   .description('Start the Prism MCP proxy')
   .option('-c, --config <path>', 'Path to prism.toml', 'prism.toml')
   .action(async (options: { config: string }) => {
-    const logger = pino({ name: 'prism', transport: { target: 'pino-pretty' } })
+    // Logs MUST go to stderr — stdout is reserved for MCP stdio protocol
+    const logger = pino({
+      name: 'prism',
+      transport: { target: 'pino-pretty', options: { destination: 2 } },
+    })
 
     logger.info('Starting Prism...')
 
@@ -33,9 +37,11 @@ program
     const proxy = new PrismProxy({
       servers: config.servers,
       maxTokenBudget: config.maxTokenBudget,
+      tracePath: config.tracePath ?? './prism-traces.db',
       logger,
     })
 
+    // Connect to all backend MCP servers
     const initResult = await proxy.initialize()
     if (!initResult.ok) {
       logger.error({ error: initResult.error.message }, 'Failed to initialize proxy')
@@ -49,11 +55,22 @@ program
       totalTools: tools.length,
       filteredTools: filtered.length,
       tokenSavings: `${tools.length - filtered.length} tools excluded`,
-    }, '✅ Prism ready')
+    }, 'Prism ready — serving via stdio')
 
-    // Keep alive
+    // Start dashboard if port is configured
+    let dashboard: DashboardServer | undefined
+    const traceStore = proxy.getTraceStore()
+    if (config.dashboardPort && traceStore) {
+      dashboard = new DashboardServer(traceStore, logger)
+      await dashboard.start(config.dashboardPort)
+    }
+
+    // Start serving MCP protocol via stdio
+    await proxy.serve()
+
     process.on('SIGINT', async () => {
       logger.info('Shutting down...')
+      if (dashboard) await dashboard.stop()
       await proxy.shutdown()
       process.exit(0)
     })

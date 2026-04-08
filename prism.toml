@@ -1,0 +1,15 @@
+# Prism — test config with mock MCP server
+
+[budget]
+max_tokens = 8000
+
+[dashboard]
+port = 3002
+
+[traces]
+path = "./prism-traces.db"
+
+[[servers]]
+name = "mock"
+command = "npx"
+args = ["tsx", "./packages/proxy/src/test-helpers/mock-mcp-server.ts"]

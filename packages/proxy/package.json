@@ -11,7 +11,14 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@prism/types": "*",
+    "better-sqlite3": "^12.8.0",
+    "express": "^5.2.1",
     "pino": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.6"
   }
 }
