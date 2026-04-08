@@ -28,58 +28,56 @@ Your agent sees a filtered, compressed set of tools. Prism forwards calls transp
 
 ## Quick Start
 
+### 1. Install
+
 ```bash
-# Install
 npm install -g prism-mcp
-
-# Create config
-cat > prism.toml << 'EOF'
-[budget]
-max_tokens = 8000
-
-[dashboard]
-port = 3002
-
-[traces]
-path = "./prism-traces.db"
-
-[[servers]]
-name = "filesystem"
-command = "npx"
-args = ["@modelcontextprotocol/server-filesystem", "/home/user"]
-
-[[servers]]
-name = "github"
-command = "npx"
-args = ["@modelcontextprotocol/server-github"]
-env = { GITHUB_TOKEN = "ghp_..." }
-EOF
-
-# Start
-prism start --config prism.toml
 ```
 
-## Use with Claude Code
+### 2. Generate config
 
-Add Prism as your MCP server in `~/.claude/claude_desktop_config.json`:
+```bash
+prism init
+```
 
+This creates `prism.toml` with sensible defaults and shows you the next steps.
+
+### 3. Configure Claude Code
+
+Add Prism to your project's `.mcp.json` (or `~/.claude/.mcp.json` for global):
+
+**Linux / macOS:**
 ```json
 {
   "mcpServers": {
     "prism": {
       "command": "prism",
-      "args": ["start", "--config", "/path/to/prism.toml"]
+      "args": ["start", "--config", "/home/your-user/prism.toml"]
     }
   }
 }
 ```
 
-Claude Code now sees only the tools that fit your budget, with compressed descriptions.
-All calls are traced to SQLite and visible in the dashboard at `http://localhost:3002`.
+**Windows (PowerShell):**
+```json
+{
+  "mcpServers": {
+    "prism": {
+      "command": "prism",
+      "args": ["start", "--config", "C:/Users/YourUser/prism.toml"]
+    }
+  }
+}
+```
+
+### 4. Open Claude Code
+
+Prism starts automatically. Claude Code sees your tools filtered and compressed.
+Open `http://localhost:3002` for the dashboard.
 
 ## Configuration
 
-### prism.toml
+Edit `prism.toml` to add your MCP servers:
 
 ```toml
 [budget]
@@ -91,7 +89,7 @@ port = 3002                # Dashboard web UI port
 [traces]
 path = "./prism-traces.db" # SQLite path for traces
 
-# Add your MCP servers:
+# --- MCP Servers ---
 
 [[servers]]
 name = "filesystem"
@@ -99,20 +97,46 @@ command = "npx"
 args = ["@modelcontextprotocol/server-filesystem", "/home/user"]
 
 [[servers]]
+name = "fetch"
+command = "npx"
+args = ["@modelcontextprotocol/server-fetch"]
+
+[[servers]]
+name = "memory"
+command = "npx"
+args = ["@modelcontextprotocol/server-memory"]
+
+[[servers]]
 name = "github"
 command = "npx"
 args = ["@modelcontextprotocol/server-github"]
 env = { GITHUB_TOKEN = "ghp_..." }
 
-[[servers]]
-name = "slack"
-command = "npx"
-args = ["@modelcontextprotocol/server-slack"]
-env = { SLACK_TOKEN = "xoxb-..." }
-enabled = false  # Disable without removing
+# Disable a server without removing it:
+# [[servers]]
+# name = "slack"
+# command = "npx"
+# args = ["@modelcontextprotocol/server-slack"]
+# enabled = false
 ```
 
-### How Filtering Works
+## Self-Management Tools
+
+Prism exposes 6 tools that Claude Code can use directly:
+
+| Tool | What it does |
+|------|-------------|
+| `prism_list_servers` | List connected servers and their tools |
+| `prism_add_server` | Add a new MCP server (persists to config) |
+| `prism_remove_server` | Disconnect and remove a server |
+| `prism_get_traces` | Query tool call history |
+| `prism_get_costs` | Token usage and cost summary |
+| `prism_detect_loops` | Check for error/call loops |
+
+Example: tell Claude Code *"add the GitHub MCP server"* and it connects it
+through Prism. Type `/mcp` after to refresh the tool list.
+
+## How Filtering Works
 
 1. **Schema Compression**: Removes filler phrases ("This tool", "Allows you to",
    "Can be used to") from descriptions. Caps at 200 chars.
@@ -125,11 +149,13 @@ enabled = false  # Disable without removing
 
 ## Dashboard
 
-When `dashboard.port` is configured, Prism serves a web UI with:
+When `dashboard.port` is configured, Prism serves a web UI at `http://localhost:3002`:
 
-- **Traces table**: Every tool call with timing, tokens, server, status
-- **Sessions view**: Aggregated stats per session — total calls, tokens, cost, errors
-- **Auto-refresh**: Updates every 5 seconds
+- **Stats cards**: Tool calls, tokens, cost, errors, latency
+- **Traces table**: Every tool call with expandable input/output detail
+- **Filters**: By server, tool, status (ok/error), free text search
+- **Sessions view**: Aggregated stats per session
+- **Auto-refresh**: Every 5 seconds with live indicator
 
 API endpoints:
 - `GET /api/traces?limit=50` — Recent traces
@@ -164,8 +190,8 @@ with approximate USD cost.
 packages/
   types/      Shared interfaces (McpTool, PrismConfig, TraceRecord)
   proxy/      Core: ToolRegistry, ContextFilter, SchemaCompressor,
-              TraceStore, DashboardServer, PrismProxy
-  cli/        CLI: prism start, prism status
+              TraceStore, DashboardServer, ManagementTools, PrismProxy
+  cli/        CLI: prism start, prism init, prism status
   dashboard/  Web UI (Preact + Vite)
 ```
 
@@ -175,7 +201,7 @@ Built with:
 - better-sqlite3 (WAL mode)
 - Express (API)
 - Preact + Vite (dashboard)
-- Vitest (41 tests)
+- Vitest (54 tests)
 
 ## Development
 
@@ -184,7 +210,7 @@ git clone https://github.com/avbartolomeo/prism
 cd prism
 npm install
 npm run build
-npm run test        # 41 tests
+npm run test        # 54 tests
 npm run typecheck
 npm run lint
 

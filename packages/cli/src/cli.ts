@@ -138,7 +138,7 @@ args = ["@modelcontextprotocol/server-filesystem", "${homeDir}"]
     console.log(`  1. Edit ${options.output} — add your MCP servers`)
     console.log(`  2. Configure Claude Code:`)
     console.log('')
-    console.log('     Add to ~/.claude/settings.json:')
+    console.log('     Add to .mcp.json (project) or ~/.claude/.mcp.json (global):')
     console.log('     {')
     console.log('       "mcpServers": {')
     console.log('         "prism": {')
