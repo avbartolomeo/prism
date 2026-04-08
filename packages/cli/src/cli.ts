@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
-import { PrismProxy } from '@prism/proxy'
+import { PrismProxy, DashboardServer } from '@prism/proxy'
 import { loadConfig } from './config'
 import pino from 'pino'
 
@@ -33,7 +33,7 @@ program
     const proxy = new PrismProxy({
       servers: config.servers,
       maxTokenBudget: config.maxTokenBudget,
-      tracePath: config.tracePath,
+      tracePath: config.tracePath ?? './prism-traces.db',
       logger,
     })
 
@@ -53,11 +53,20 @@ program
       tokenSavings: `${tools.length - filtered.length} tools excluded`,
     }, 'Prism ready — serving via stdio')
 
+    // Start dashboard if port is configured
+    let dashboard: DashboardServer | undefined
+    const traceStore = proxy.getTraceStore()
+    if (config.dashboardPort && traceStore) {
+      dashboard = new DashboardServer(traceStore, logger)
+      await dashboard.start(config.dashboardPort)
+    }
+
     // Start serving MCP protocol via stdio
     await proxy.serve()
 
     process.on('SIGINT', async () => {
       logger.info('Shutting down...')
+      if (dashboard) await dashboard.stop()
       await proxy.shutdown()
       process.exit(0)
     })

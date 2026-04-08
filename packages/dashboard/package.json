@@ -2,11 +2,19 @@
   "name": "@prism/dashboard",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "build": "echo 'Dashboard Phase 2'",
+    "build": "vite build",
+    "dev": "vite",
     "test": "echo 'No tests yet'",
-    "typecheck": "echo 'ok'",
-    "lint": "echo 'ok'",
-    "dev": "echo 'Dashboard not implemented yet'"
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'ok'"
+  },
+  "dependencies": {
+    "preact": "^10.29.1",
+    "vite": "^8.0.7"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.5"
   }
 }
