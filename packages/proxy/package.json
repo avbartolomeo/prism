@@ -1,11 +1,13 @@
 {
   "name": "prism-mcp-proxy",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Core MCP proxy engine for Prism",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "license": "MIT",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/avbartolomeo/prism",
