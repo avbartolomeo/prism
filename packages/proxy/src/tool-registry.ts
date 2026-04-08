@@ -121,6 +121,25 @@ export class ToolRegistry {
   }
 
   /**
+   * Disconnect and remove a single server.
+   */
+  async disconnectServer(serverName: string): Promise<void> {
+    const conn = this.connections.get(serverName)
+    if (conn) {
+      try {
+        await conn.client.close()
+      } catch (error) {
+        this.logger.warn(
+          { server: serverName, error: error instanceof Error ? error.message : String(error) },
+          'Error closing server connection',
+        )
+      }
+      this.connections.delete(serverName)
+    }
+    this.tools = this.tools.filter(t => t.serverName !== serverName)
+  }
+
+  /**
    * Shutdown all server connections.
    */
   async shutdown(): Promise<void> {

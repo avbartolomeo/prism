@@ -34,10 +34,12 @@ program
     const config = configResult.value
     logger.info({ servers: config.servers.length, budget: config.maxTokenBudget }, 'Config loaded')
 
+    const configPath = require('path').resolve(options.config)
     const proxy = new PrismProxy({
       servers: config.servers,
       maxTokenBudget: config.maxTokenBudget,
       tracePath: config.tracePath ?? './prism-traces.db',
+      configPath,
       logger,
     })
 
