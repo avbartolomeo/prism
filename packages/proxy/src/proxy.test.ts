@@ -95,12 +95,15 @@ describe('PrismProxy', () => {
   })
 
   it('should filter tools by token budget', async () => {
-    // Very small budget — should exclude some tools
+    // Very small budget — should exclude some backend tools
     await setupProxy(50)
 
     const result = await client.listTools()
-    // With a 50 token budget, not all 3 tools should fit
-    expect(result.tools.length).toBeLessThan(3)
+    // 6 management tools are always included, backend tools are filtered by budget
+    const mgmtCount = result.tools.filter(t => t.name.startsWith('prism_')).length
+    const backendCount = result.tools.length - mgmtCount
+    expect(mgmtCount).toBe(6)
+    expect(backendCount).toBeLessThan(3)
   })
 
   it('should aggregate tools from multiple servers', async () => {

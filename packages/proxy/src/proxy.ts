@@ -10,6 +10,7 @@ import { ToolRegistry } from './tool-registry'
 import { ContextFilter } from './context-filter'
 import { SchemaCompressor } from './schema-compressor'
 import { TraceStore } from './trace-store'
+import { ManagementTools } from './management-tools'
 import crypto from 'crypto'
 import pino from 'pino'
 
@@ -19,6 +20,8 @@ export interface PrismProxyConfig {
   logger?: pino.Logger
   /** SQLite path for traces. If set, tracing is enabled. */
   tracePath?: string
+  /** Path to prism.toml config file. If set, management tools can persist changes. */
+  configPath?: string
 }
 
 /**
@@ -27,6 +30,7 @@ export interface PrismProxyConfig {
  * Acts as an MCP Server (agent connects via stdio) and as MCP Client
  * to each configured backend server. Filters and compresses tool schemas
  * to fit within a token budget. Optionally traces every tool call to SQLite.
+ * Exposes management tools for self-administration and introspection.
  */
 export class PrismProxy {
   private logger: pino.Logger
@@ -36,6 +40,7 @@ export class PrismProxy {
   private mcpServer: Server
   private transport: StdioServerTransport | undefined
   private traceStore: TraceStore | undefined
+  private management: ManagementTools
   private sessionId: string
 
   constructor(private config: PrismProxyConfig) {
@@ -49,6 +54,15 @@ export class PrismProxy {
       this.traceStore = new TraceStore(config.tracePath, this.logger)
       this.logger.info({ tracePath: config.tracePath, sessionId: this.sessionId }, 'Trace store initialized')
     }
+
+    this.management = new ManagementTools(
+      this.registry,
+      this.compressor,
+      this.traceStore,
+      this.sessionId,
+      config.configPath,
+      this.logger,
+    )
 
     this.mcpServer = new Server(
       { name: 'prism-proxy', version: '0.1.0' },
@@ -101,12 +115,13 @@ export class PrismProxy {
    * Set up MCP request handlers for tools/list and tools/call.
    */
   private setupHandlers(): void {
-    // Handle tools/list — return filtered + compressed tools
+    // Handle tools/list — return filtered backend tools + management tools
     this.mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
       const allTools = this.registry.getAllTools()
       const filtered = this.filter.select(allTools)
 
-      const tools = filtered.map(tool => ({
+      // Backend tools (filtered + compressed)
+      const backendTools = filtered.map(tool => ({
         name: tool.name,
         description: tool.compressedDescription ?? tool.description,
         inputSchema: tool.inputSchema as {
@@ -117,17 +132,30 @@ export class PrismProxy {
         },
       }))
 
+      // Management tools (always included, not subject to budget)
+      const mgmtTools = this.management.getToolDefs()
+
+      const tools = [...backendTools, ...mgmtTools]
+
       this.logger.info(
-        { total: allTools.length, returned: tools.length },
+        { total: allTools.length, returned: backendTools.length, management: mgmtTools.length },
         'tools/list served',
       )
 
       return { tools }
     })
 
-    // Handle tools/call — route to the correct backend server, trace the call
+    // Handle tools/call — route to management tools or backend servers
     this.mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params
+
+      // Check if this is a management tool
+      if (this.management.isManagementTool(name)) {
+        this.logger.info({ tool: name }, 'Executing management tool')
+        return this.management.execute(name, args ?? {})
+      }
+
+      // Route to backend server
       const serverName = this.registry.findToolServer(name)
 
       if (!serverName) {
@@ -148,7 +176,6 @@ export class PrismProxy {
       if (!result.ok) {
         this.logger.error({ tool: name, server: serverName, error: result.error.message }, 'Tool call failed')
 
-        // Trace the failed call
         this.recordTrace(serverName, name, args ?? {}, null, startedAt, completedAt, durationMs, result.error.message)
 
         return {
@@ -157,18 +184,15 @@ export class PrismProxy {
         }
       }
 
-      // Forward the result as-is from the backend server
       const callResult = result.value as Record<string, unknown>
       const isError = callResult.isError as boolean | undefined
 
-      // Trace the successful call
       this.recordTrace(
         serverName, name, args ?? {}, callResult,
         startedAt, completedAt, durationMs,
         isError ? 'Tool returned isError' : undefined,
       )
 
-      // Check for loops after recording
       this.checkForLoops()
 
       return {
@@ -230,45 +254,27 @@ export class PrismProxy {
     }
   }
 
-  /**
-   * Get filtered tools that fit within the token budget.
-   */
   getFilteredTools(context?: string): McpTool[] {
     const allTools = this.registry.getAllTools()
     return this.filter.select(allTools, context)
   }
 
-  /**
-   * Get all tools without filtering (for dashboard/debug).
-   */
   getAllTools(): McpTool[] {
     return this.registry.getAllTools()
   }
 
-  /**
-   * Get the tool registry (for testing).
-   */
   getRegistry(): ToolRegistry {
     return this.registry
   }
 
-  /**
-   * Get the trace store (for dashboard API).
-   */
   getTraceStore(): TraceStore | undefined {
     return this.traceStore
   }
 
-  /**
-   * Get the current session ID.
-   */
   getSessionId(): string {
     return this.sessionId
   }
 
-  /**
-   * Shutdown all MCP server connections and the proxy server.
-   */
   async shutdown(): Promise<void> {
     await this.registry.shutdown()
     await this.mcpServer.close()
