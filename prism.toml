@@ -1,0 +1,9 @@
+# Prism — test config with mock MCP server
+
+[budget]
+max_tokens = 8000
+
+[[servers]]
+name = "mock"
+command = "npx"
+args = ["tsx", "./packages/proxy/src/test-helpers/mock-mcp-server.ts"]
