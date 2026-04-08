@@ -36,6 +36,7 @@ program
       logger,
     })
 
+    // Connect to all backend MCP servers
     const initResult = await proxy.initialize()
     if (!initResult.ok) {
       logger.error({ error: initResult.error.message }, 'Failed to initialize proxy')
@@ -49,9 +50,11 @@ program
       totalTools: tools.length,
       filteredTools: filtered.length,
       tokenSavings: `${tools.length - filtered.length} tools excluded`,
-    }, '✅ Prism ready')
+    }, 'Prism ready — serving via stdio')
 
-    // Keep alive
+    // Start serving MCP protocol via stdio
+    await proxy.serve()
+
     process.on('SIGINT', async () => {
       logger.info('Shutting down...')
       await proxy.shutdown()

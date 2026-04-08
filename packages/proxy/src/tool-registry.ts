@@ -1,37 +1,102 @@
 import type { Result, McpServerConfig, McpTool } from '@prism/types'
 import { ok, err } from '@prism/types'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import pino from 'pino'
 
+interface ConnectedServer {
+  config: McpServerConfig
+  client: Client
+  transport: StdioClientTransport
+}
+
 /**
- * ToolRegistry — maintains the catalog of all tools from all MCP servers.
+ * ToolRegistry — spawns MCP servers as child processes, performs handshake,
+ * discovers tools, and maintains the catalog.
  */
 export class ToolRegistry {
   private tools: McpTool[] = []
-  private servers = new Map<string, McpServerConfig>()
+  private connections = new Map<string, ConnectedServer>()
 
   constructor(private logger: pino.Logger) {}
 
   /**
-   * Register an MCP server and discover its tools.
-   * In Phase 0, this is a placeholder — real MCP connection comes in Phase 1.
+   * Connect to an MCP server via stdio, perform handshake, and discover its tools.
    */
-  async registerServer(config: McpServerConfig): Promise<Result<void>> {
+  async registerServer(config: McpServerConfig): Promise<Result<McpTool[]>> {
     try {
-      this.servers.set(config.name, config)
-      this.logger.info({ server: config.name }, 'Server registered')
-      return ok(undefined)
+      this.logger.info({ server: config.name, command: config.command, args: config.args }, 'Connecting to MCP server')
+
+      const transport = new StdioClientTransport({
+        command: config.command,
+        args: config.args,
+        env: config.env ? { ...process.env, ...config.env } as Record<string, string> : undefined,
+        stderr: 'pipe',
+      })
+
+      const client = new Client(
+        { name: 'prism-proxy', version: '0.1.0' },
+        { capabilities: {} },
+      )
+
+      // Connect and perform handshake
+      await client.connect(transport)
+
+      this.logger.info({ server: config.name }, 'MCP handshake complete')
+
+      // Discover tools
+      const toolsResult = await client.listTools()
+      const discovered: McpTool[] = toolsResult.tools.map(t => ({
+        name: t.name,
+        description: t.description ?? '',
+        inputSchema: t.inputSchema as Record<string, unknown>,
+        serverName: config.name,
+      }))
+
+      this.tools.push(...discovered)
+      this.connections.set(config.name, { config, client, transport })
+
+      this.logger.info(
+        { server: config.name, tools: discovered.length, toolNames: discovered.map(t => t.name) },
+        'Tools discovered',
+      )
+
+      return ok(discovered)
     } catch (error) {
       return err(
-        new Error(`Failed to register ${config.name}: ${error instanceof Error ? error.message : String(error)}`)
+        new Error(`Failed to connect to ${config.name}: ${error instanceof Error ? error.message : String(error)}`)
       )
     }
   }
 
   /**
-   * Add a tool to the registry (called after MCP handshake).
+   * Call a tool on the appropriate MCP server.
    */
-  addTool(tool: McpTool): void {
-    this.tools.push(tool)
+  async callTool(
+    serverName: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<Result<unknown>> {
+    const connection = this.connections.get(serverName)
+    if (!connection) {
+      return err(new Error(`Server not connected: ${serverName}`))
+    }
+
+    try {
+      const result = await connection.client.callTool({ name: toolName, arguments: args })
+      return ok(result)
+    } catch (error) {
+      return err(
+        new Error(`Tool call failed (${serverName}/${toolName}): ${error instanceof Error ? error.message : String(error)}`)
+      )
+    }
+  }
+
+  /**
+   * Get the MCP Client for a specific server (for advanced forwarding).
+   */
+  getClient(serverName: string): Client | undefined {
+    return this.connections.get(serverName)?.client
   }
 
   /**
@@ -49,10 +114,28 @@ export class ToolRegistry {
   }
 
   /**
+   * Find which server provides a given tool.
+   */
+  findToolServer(toolName: string): string | undefined {
+    return this.tools.find(t => t.name === toolName)?.serverName
+  }
+
+  /**
    * Shutdown all server connections.
    */
   async shutdown(): Promise<void> {
-    this.servers.clear()
+    for (const [name, conn] of this.connections) {
+      try {
+        await conn.client.close()
+        this.logger.info({ server: name }, 'Server connection closed')
+      } catch (error) {
+        this.logger.warn(
+          { server: name, error: error instanceof Error ? error.message : String(error) },
+          'Error closing server connection',
+        )
+      }
+    }
+    this.connections.clear()
     this.tools = []
   }
 }
