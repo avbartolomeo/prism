@@ -1,13 +1,17 @@
 # Prism — MCP Context Router configuration
+# Copy this to prism.toml and adjust to your setup.
 
 [budget]
-max_tokens = 8000  # Max tokens for tool descriptions
+max_tokens = 8000  # Max tokens for tool descriptions in context
 
-# [dashboard]
-# port = 3002
+[dashboard]
+port = 3002  # Web UI at http://localhost:3002
 
-# [traces]
-# path = "./prism-traces.db"
+[traces]
+path = "./prism-traces.db"  # SQLite path for trace storage
+
+# --- MCP Servers ---
+# Add your servers below. Each server is spawned as a child process.
 
 [[servers]]
 name = "filesystem"
@@ -25,3 +29,15 @@ env = { GITHUB_TOKEN = "ghp_..." }
 # command = "npx"
 # args = ["@modelcontextprotocol/server-slack"]
 # env = { SLACK_TOKEN = "xoxb-..." }
+
+# [[servers]]
+# name = "postgres"
+# command = "npx"
+# args = ["@modelcontextprotocol/server-postgres", "postgresql://user:pass@localhost/db"]
+
+# Disable a server without removing it:
+# [[servers]]
+# name = "disabled-server"
+# command = "npx"
+# args = ["some-server"]
+# enabled = false

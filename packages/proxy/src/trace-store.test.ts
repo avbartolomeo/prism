@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { TraceStore } from './trace-store'
-import type { TraceRecord } from '@prism/types'
+import type { TraceRecord } from '@prism-mcp/types'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'

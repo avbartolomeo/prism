@@ -1,5 +1,5 @@
-import type { Result, McpServerConfig, McpTool } from '@prism/types'
-import { ok } from '@prism/types'
+import type { Result, McpServerConfig, McpTool } from '@prism-mcp/types'
+import { ok } from '@prism-mcp/types'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {

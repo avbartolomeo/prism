@@ -5,3 +5,7 @@ dist/
 .env
 *.log
 /tmp/
+*.db
+*.db-shm
+*.db-wal
+.claude/

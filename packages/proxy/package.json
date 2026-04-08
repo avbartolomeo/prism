@@ -1,8 +1,16 @@
 {
-  "name": "@prism/proxy",
+  "name": "@prism-mcp/proxy",
   "version": "0.1.0",
+  "description": "Core MCP proxy engine for Prism",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "license": "MIT",
+  "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/avbartolomeo/prism",
+    "directory": "packages/proxy"
+  },
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run --passWithNoTests",
@@ -12,7 +20,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@prism/types": "*",
+    "@prism-mcp/types": "*",
     "better-sqlite3": "^12.8.0",
     "express": "^5.2.1",
     "pino": "^9.0.0"

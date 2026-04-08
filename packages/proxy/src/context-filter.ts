@@ -1,4 +1,4 @@
-import type { McpTool } from '@prism/types'
+import type { McpTool } from '@prism-mcp/types'
 import pino from 'pino'
 
 /**
