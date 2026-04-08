@@ -1,0 +1,27 @@
+# Prism — MCP Context Router configuration
+
+[budget]
+max_tokens = 8000  # Max tokens for tool descriptions
+
+# [dashboard]
+# port = 3002
+
+# [traces]
+# path = "./prism-traces.db"
+
+[[servers]]
+name = "filesystem"
+command = "npx"
+args = ["@modelcontextprotocol/server-filesystem", "/home/user"]
+
+[[servers]]
+name = "github"
+command = "npx"
+args = ["@modelcontextprotocol/server-github"]
+env = { GITHUB_TOKEN = "ghp_..." }
+
+# [[servers]]
+# name = "slack"
+# command = "npx"
+# args = ["@modelcontextprotocol/server-slack"]
+# env = { SLACK_TOKEN = "xoxb-..." }

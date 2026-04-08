@@ -1,0 +1,12 @@
+{
+  "name": "@prism/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo 'Dashboard Phase 2'",
+    "test": "echo 'No tests yet'",
+    "typecheck": "echo 'ok'",
+    "lint": "echo 'ok'",
+    "dev": "echo 'Dashboard not implemented yet'"
+  }
+}

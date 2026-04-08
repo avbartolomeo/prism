@@ -1,0 +1,35 @@
+{
+  "name": "prism",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP Context Router + Agent Observability",
+  "packageManager": "npm@10.8.2",
+  "workspaces": [
+    "packages/types",
+    "packages/proxy",
+    "packages/cli",
+    "packages/dashboard"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint:fix",
+    "typecheck": "turbo run typecheck",
+    "dev": "turbo run dev --parallel",
+    "clean": "turbo run clean"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^22.19.17",
+    "eslint": "^9.0.0",
+    "prettier": "^3.3.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

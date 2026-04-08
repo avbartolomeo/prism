@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "types": ["node"],
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "paths": {
+      "@prism/types": ["./packages/types/src"],
+      "@prism/proxy": ["./packages/proxy/src"],
+      "@prism/cli": ["./packages/cli/src"],
+      "@prism/dashboard": ["./packages/dashboard/src"]
+    }
+  },
+  "exclude": ["node_modules", "dist"]
+}

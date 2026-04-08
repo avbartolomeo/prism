@@ -1,0 +1,23 @@
+{
+  "name": "@prism/cli",
+  "version": "0.1.0",
+  "main": "./dist/index.js",
+  "bin": {
+    "prism": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@prism/types": "*",
+    "@prism/proxy": "*",
+    "@iarna/toml": "^2.2.5",
+    "commander": "^12.0.0",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0"
+  }
+}
