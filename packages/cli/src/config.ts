@@ -1,5 +1,5 @@
-import type { Result, PrismConfig, McpServerConfig } from '@prism/types'
-import { ok, err } from '@prism/types'
+import type { Result, PrismConfig, McpServerConfig } from '@prism-mcp/types'
+import { ok, err } from '@prism-mcp/types'
 import fs from 'fs'
 import TOML from '@iarna/toml'
 

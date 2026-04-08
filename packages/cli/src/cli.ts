@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
-import { PrismProxy, DashboardServer } from '@prism/proxy'
+import { PrismProxy, DashboardServer } from '@prism-mcp/proxy'
 import { loadConfig } from './config'
 import pino from 'pino'
 

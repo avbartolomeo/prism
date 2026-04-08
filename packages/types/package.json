@@ -1,8 +1,16 @@
 {
-  "name": "@prism/types",
+  "name": "@prism-mcp/types",
   "version": "0.1.0",
+  "description": "Shared types for Prism MCP proxy",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "license": "MIT",
+  "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/avbartolomeo/prism",
+    "directory": "packages/types"
+  },
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run --passWithNoTests",
