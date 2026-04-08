@@ -220,7 +220,7 @@ export class ManagementTools {
     return {
       content: [{
         type: 'text',
-        text: `Server "${name}" connected. Discovered ${toolNames.length} tools: ${toolNames.join(', ')}`,
+        text: `Server "${name}" connected. Discovered ${toolNames.length} tools: ${toolNames.join(', ')}\n\nIMPORTANT: Tell the user to type /mcp in Claude Code to refresh the tool list and make the new tools available.`,
       }],
     }
   }
