@@ -73,6 +73,17 @@ export class PrismProxy {
       },
     )
 
+    // Wire up tool list change notifications — when add/remove server,
+    // notify the agent to re-fetch tools/list so new tools appear immediately
+    this.management.setToolsChangedCallback(async () => {
+      try {
+        await this.mcpServer.sendToolListChanged()
+        this.logger.info('Sent tools/list_changed notification to agent')
+      } catch (err) {
+        this.logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Failed to send tools/list_changed')
+      }
+    })
+
     this.setupHandlers()
   }
 

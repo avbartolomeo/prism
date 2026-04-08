@@ -23,6 +23,8 @@ export interface ManagementToolDef {
  * and introspection. These appear alongside backend server tools in tools/list.
  */
 export class ManagementTools {
+  private onToolsChanged: (() => Promise<void>) | undefined
+
   constructor(
     private registry: ToolRegistry,
     private compressor: SchemaCompressor,
@@ -31,6 +33,14 @@ export class ManagementTools {
     private configPath: string | undefined,
     private logger: pino.Logger,
   ) {}
+
+  /**
+   * Set callback to notify the agent that the tool list changed.
+   * Called after add/remove server so the agent re-fetches tools/list.
+   */
+  setToolsChangedCallback(cb: () => Promise<void>): void {
+    this.onToolsChanged = cb
+  }
 
   /**
    * Get all management tool definitions.
@@ -202,6 +212,11 @@ export class ManagementTools {
     const toolNames = result.value.map(t => t.name)
     this.logger.info({ server: name, tools: toolNames.length }, 'Server added via management tool')
 
+    // Notify the agent that tools changed — triggers re-fetch of tools/list
+    if (this.onToolsChanged) {
+      await this.onToolsChanged()
+    }
+
     return {
       content: [{
         type: 'text',
@@ -229,6 +244,11 @@ export class ManagementTools {
     this.removeServerFromConfig(name)
 
     this.logger.info({ server: name }, 'Server removed via management tool')
+
+    // Notify the agent that tools changed
+    if (this.onToolsChanged) {
+      await this.onToolsChanged()
+    }
 
     return {
       content: [{ type: 'text', text: `Server "${name}" disconnected and removed.` }],
