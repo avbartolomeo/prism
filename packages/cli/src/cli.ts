@@ -16,7 +16,11 @@ program
   .description('Start the Prism MCP proxy')
   .option('-c, --config <path>', 'Path to prism.toml', 'prism.toml')
   .action(async (options: { config: string }) => {
-    const logger = pino({ name: 'prism', transport: { target: 'pino-pretty' } })
+    // Logs MUST go to stderr — stdout is reserved for MCP stdio protocol
+    const logger = pino({
+      name: 'prism',
+      transport: { target: 'pino-pretty', options: { destination: 2 } },
+    })
 
     logger.info('Starting Prism...')
 

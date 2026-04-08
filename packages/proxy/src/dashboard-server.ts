@@ -52,7 +52,8 @@ export class DashboardServer {
     this.app.use(express.static(dashboardDist))
 
     // SPA fallback — serve index.html for all non-API routes
-    this.app.get('*', (_req, res) => {
+    // Express 5 requires named wildcard params
+    this.app.get('{*path}', (_req, res) => {
       res.sendFile(path.join(dashboardDist, 'index.html'), (err) => {
         if (err) {
           res.status(200).send(`
