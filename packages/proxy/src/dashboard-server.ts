@@ -59,6 +59,12 @@ export class DashboardServer {
       res.json({ status: 'ok', version: VERSION })
     })
 
+    this.app.delete('/api/traces', (_req, res) => {
+      const deleted = this.traceStore.clearAll()
+      this.logger.info({ deleted }, 'All traces cleared')
+      res.json({ deleted })
+    })
+
     // Try to serve dashboard static files from multiple locations
     const possibleDashboardPaths = [
       path.resolve(__dirname, '../../dashboard/dist'),       // monorepo dev
@@ -168,12 +174,21 @@ export class DashboardServer {
     /* Empty state */
     .empty { text-align: center; padding: 60px 20px; color: #475569; }
     .empty h3 { color: #64748b; margin-bottom: 8px; }
+
+    /* Reset button */
+    .btn-reset { padding: 7px 16px; border: 1px solid #dc2626; border-radius: 6px; background: transparent; color: #f87171; cursor: pointer; font-size: 13px; font-weight: 500; }
+    .btn-reset:hover { background: #dc262622; }
+    .version { color: #475569; font-size: 12px; }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
       <h1><span class="live"></span>Prism <span>MCP Context Router</span></h1>
+      <div style="display:flex;align-items:center;gap:16px">
+        <span class="version">v${VERSION}</span>
+        <button class="btn-reset" onclick="resetTraces()">Reset traces</button>
+      </div>
     </header>
     <div class="stats" id="stats"></div>
     <div class="toolbar">
@@ -250,16 +265,20 @@ export class DashboardServer {
       renderStats(filtered);
     }
 
+    async function resetTraces() {
+      if (!confirm('Clear all traces? This cannot be undone.')) return;
+      await fetch('/api/traces', { method: 'DELETE' });
+      fetchData();
+    }
+
     function renderStats(traces) {
       const total = traces.length;
       const tokens = traces.reduce((s, t) => s + (t.inputTokens||0) + (t.outputTokens||0), 0);
       const errors = traces.filter(t => t.error).length;
       const avgMs = total > 0 ? Math.round(traces.reduce((s, t) => s + t.durationMs, 0) / total) : 0;
-      const cost = (tokens / 1000000) * 9;
       document.getElementById('stats').innerHTML =
         stat(total, 'Tool Calls') +
         stat(tokens.toLocaleString(), 'Tokens') +
-        stat('$' + cost.toFixed(4), 'Est. Cost') +
         stat(errors, 'Errors', errors > 0) +
         stat(avgMs + 'ms', 'Avg Latency');
     }
@@ -313,7 +332,7 @@ export class DashboardServer {
     function renderSessions(sessions) {
       if (!sessions.length) { document.getElementById('content').innerHTML = '<div class="empty"><h3>No sessions yet</h3></div>'; return; }
       renderSessionStats(sessions);
-      let html = '<table><thead><tr><th>Session</th><th>Started</th><th>Tool Calls</th><th>Tokens</th><th>Cost</th><th>Errors</th></tr></thead><tbody>';
+      let html = '<table><thead><tr><th>Session</th><th>Started</th><th>Tool Calls</th><th>Tokens</th><th>Errors</th></tr></thead><tbody>';
       for (const s of sessions) {
         const time = new Date(s.startedAt).toLocaleString();
         const cls = s.errors > 0 ? ' class="error-row"' : '';
@@ -322,7 +341,6 @@ export class DashboardServer {
         html += '<td class="time">' + time + '</td>';
         html += '<td>' + s.toolCalls + '</td>';
         html += '<td class="tokens">' + s.totalTokens.toLocaleString() + '</td>';
-        html += '<td>$' + s.totalCostUsd.toFixed(4) + '</td>';
         html += '<td>' + (s.errors > 0 ? '<span class="badge badge-error">' + s.errors + '</span>' : '<span class="badge badge-ok">0</span>') + '</td>';
         html += '</tr>';
       }
@@ -333,13 +351,11 @@ export class DashboardServer {
     function renderSessionStats(sessions) {
       const totalCalls = sessions.reduce((s,x) => s + x.toolCalls, 0);
       const totalTokens = sessions.reduce((s,x) => s + x.totalTokens, 0);
-      const totalCost = sessions.reduce((s,x) => s + x.totalCostUsd, 0);
       const totalErrors = sessions.reduce((s,x) => s + x.errors, 0);
       document.getElementById('stats').innerHTML =
         stat(sessions.length, 'Sessions') +
         stat(totalCalls, 'Total Calls') +
         stat(totalTokens.toLocaleString(), 'Total Tokens') +
-        stat('$' + totalCost.toFixed(4), 'Total Cost') +
         stat(totalErrors, 'Total Errors', totalErrors > 0);
     }
 

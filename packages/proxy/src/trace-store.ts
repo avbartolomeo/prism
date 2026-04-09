@@ -184,6 +184,14 @@ export class TraceStore {
   }
 
   /**
+   * Clear all traces.
+   */
+  clearAll(): number {
+    const result = this.db.prepare('DELETE FROM traces').run()
+    return result.changes
+  }
+
+  /**
    * Generate a new trace ID.
    */
   static generateId(): string {
@@ -240,7 +248,11 @@ function rowToTrace(row: TraceRow): TraceRecord {
   }
 }
 
+/**
+ * Estimate cost in USD based on token count.
+ * Uses Claude Sonnet average: ~$3/MTok input, ~$15/MTok output → ~$9/MTok blended.
+ * This is a rough approximation — actual cost depends on model and input/output ratio.
+ */
 function estimateCost(tokens: number): number {
-  // Rough estimate: $3/MTok input, $15/MTok output — average ~$9/MTok
   return (tokens / 1_000_000) * 9
 }
