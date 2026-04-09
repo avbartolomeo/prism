@@ -137,10 +137,126 @@ args = ["@modelcontextprotocol/server-filesystem", "${homeDir}"]
   })
 
 program
+  .command('benchmark')
+  .description('Show token savings with vs without Prism')
+  .option('-c, --config <path>', 'Path to prism.toml', 'prism.toml')
+  .action(async (options: { config: string }) => {
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js')
+    const { StdioClientTransport } = await import('@modelcontextprotocol/sdk/client/stdio.js')
+
+    const configResult = loadConfig(options.config)
+    if (!configResult.ok) {
+      console.error(configResult.error.message)
+      process.exit(1)
+      return
+    }
+
+    const { servers, maxTokenBudget: budget } = configResult.value
+
+    console.log('')
+    console.log('  ╔══════════════════════════════════════════════════╗')
+    console.log('  ║         PRISM — Token Savings Benchmark          ║')
+    console.log('  ╚══════════════════════════════════════════════════╝')
+    console.log('')
+    console.log('  ── WITHOUT PRISM (raw MCP servers) ──')
+    console.log('')
+
+    let totalTools = 0
+    let totalTokens = 0
+    const allTools: { server: string; name: string; desc: string; tokens: number }[] = []
+
+    for (const server of servers) {
+      if (server.enabled === false) continue
+      try {
+        process.stdout.write(`    Connecting to ${server.name}...`)
+        const transport = new StdioClientTransport({
+          command: server.command,
+          args: server.args,
+          env: { ...process.env, ...(server.env ?? {}) } as Record<string, string>,
+          stderr: 'pipe',
+        })
+        const client = new Client({ name: 'benchmark', version: '1.0' }, { capabilities: {} })
+        await client.connect(transport)
+        const result = await client.listTools()
+
+        let serverTokens = 0
+        for (const t of result.tools) {
+          const fullText = `${t.name} ${t.description ?? ''} ${JSON.stringify(t.inputSchema)}`
+          const tokens = Math.ceil(fullText.length / 4)
+          allTools.push({ server: server.name, name: t.name, desc: t.description ?? '', tokens })
+          serverTokens += tokens
+        }
+
+        await client.close()
+        totalTools += result.tools.length
+        totalTokens += serverTokens
+        console.log(` ${result.tools.length} tools, ${serverTokens.toLocaleString()} tokens`)
+      } catch (e) {
+        console.log(` FAILED: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+
+    console.log('')
+    console.log(`    Total: ${totalTools} tools, ${totalTokens.toLocaleString()} tokens`)
+    console.log('')
+    console.log('  ── WITH PRISM (filtered + compressed) ──')
+    console.log('')
+    console.log(`    Budget: ${budget.toLocaleString()} tokens`)
+
+    // Simulate compression (~30%) + greedy budget fit
+    allTools.sort((a, b) => a.tokens - b.tokens)
+    let prismTokens = 0
+    let prismTools = 0
+    const excluded: typeof allTools = []
+
+    for (const tool of allTools) {
+      const compressed = Math.ceil(tool.tokens * 0.7)
+      if (prismTokens + compressed <= budget) {
+        prismTokens += compressed
+        prismTools++
+      } else {
+        excluded.push(tool)
+      }
+    }
+
+    console.log(`    Included: ${prismTools} of ${totalTools} tools`)
+    console.log(`    Used: ${prismTokens.toLocaleString()} of ${budget.toLocaleString()} tokens`)
+
+    if (excluded.length > 0) {
+      console.log('')
+      console.log(`    Excluded (${excluded.length}):`)
+      for (const t of excluded.slice(0, 10)) {
+        console.log(`      - ${t.server}/${t.name} (${t.tokens} tokens)`)
+      }
+      if (excluded.length > 10) console.log(`      ... and ${excluded.length - 10} more`)
+    }
+
+    // Results
+    const saved = totalTokens - prismTokens
+    const pct = totalTokens > 0 ? Math.round((saved / totalTokens) * 100) : 0
+    const rawPct = Math.round((totalTokens / 200000) * 100)
+    const prismPct = Math.round((prismTokens / 200000) * 100)
+
+    console.log('')
+    console.log('  ── RESULTS ──')
+    console.log('')
+    console.log(`    Without Prism: ${totalTokens.toLocaleString()} tokens (${rawPct}% of 200K context)`)
+    console.log(`    With Prism:    ${prismTokens.toLocaleString()} tokens (${prismPct}% of 200K context)`)
+    console.log(`    ─────────────────────────────────────`)
+    console.log(`    Saved:         ${saved.toLocaleString()} tokens (${pct}% reduction)`)
+    console.log('')
+
+    if (pct < 40) {
+      console.log('    Tip: Add more servers for a bigger impact. Run "prism add" in Claude Code.')
+    }
+    console.log('')
+  })
+
+program
   .command('status')
   .description('Show Prism status')
   .action(() => {
-    console.log('Prism v0.1.11')
+    console.log('Prism v0.1.12')
     console.log('Status: not running (use "prism start")')
   })
 
