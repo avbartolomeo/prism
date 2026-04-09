@@ -2,11 +2,13 @@
 import { Command } from 'commander'
 import { PrismProxy, DashboardServer } from 'prism-mcp-proxy'
 import { loadConfig } from './config'
+import { KNOWN_SERVERS, findKnownServer } from './server-registry'
 import dotenv from 'dotenv'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import pino from 'pino'
+import readline from 'readline'
 
 const program = new Command()
 
@@ -197,6 +199,183 @@ args = ["@modelcontextprotocol/server-filesystem", "${homeDir}"]
     console.log('')
     console.log('  4. Open Claude Code — Prism starts automatically')
   })
+
+program
+  .command('add [server]')
+  .description('Add an MCP server (e.g. prism add github)')
+  .option('-c, --config <path>', 'Path to prism.toml', 'prism.toml')
+  .action(async (serverName: string | undefined, options: { config: string }) => {
+    const configPath = path.resolve(options.config)
+
+    if (!serverName) {
+      // Show available servers
+      console.log('Available MCP servers:\n')
+      const maxName = Math.max(...KNOWN_SERVERS.map(s => s.name.length))
+      for (const s of KNOWN_SERVERS) {
+        const key = s.envKeys.length > 0 ? ` (needs ${s.envKeys.join(', ')})` : ''
+        console.log(`  ${s.name.padEnd(maxName + 2)} ${s.description}${key}`)
+      }
+      console.log('\nUsage: prism add <server-name>')
+      return
+    }
+
+    const known = findKnownServer(serverName)
+    if (!known) {
+      console.error(`Unknown server: "${serverName}"`)
+      console.log('Run "prism add" to see available servers.')
+      process.exit(1)
+      return
+    }
+
+    // Check if already in config (only active lines, not comments)
+    if (fs.existsSync(configPath)) {
+      const content = fs.readFileSync(configPath, 'utf-8')
+      const activeLines = content.split('\n').filter(l => !l.trim().startsWith('#'))
+      if (activeLines.some(l => l.includes(`name = "${known.name}"`))) {
+        console.error(`Server "${known.name}" is already in ${options.config}`)
+        process.exit(1)
+        return
+      }
+    }
+
+    // If server needs API keys, prompt for them
+    if (known.envKeys.length > 0) {
+      const envPath = resolveEnvPath(options.config)
+      const envVars = parseEnvFile(envPath)
+
+      for (const key of known.envKeys) {
+        if (envVars.has(key) && envVars.get(key) !== '') {
+          console.log(`  ${key} already set`)
+          continue
+        }
+        const value = await promptInput(`  Enter ${key}: `)
+        if (!value) {
+          console.error(`${key} is required for ${known.name}. Aborting.`)
+          process.exit(1)
+          return
+        }
+        envVars.set(key, value)
+      }
+
+      writeEnvFile(envPath, envVars)
+    }
+
+    // Append to prism.toml
+    if (!fs.existsSync(configPath)) {
+      console.error(`Config not found: ${configPath}`)
+      console.error('Run "prism init" first.')
+      process.exit(1)
+      return
+    }
+
+    let toml = fs.readFileSync(configPath, 'utf-8')
+    toml += `\n[[servers]]\nname = "${known.name}"\ncommand = "${known.command}"\nargs = [${known.args.map(a => `"${a}"`).join(', ')}]\n`
+    fs.writeFileSync(configPath, toml)
+
+    console.log(`Added ${known.name} — ${known.description}`)
+    if (known.envKeys.length > 0) {
+      console.log(`Secrets saved: ${known.envKeys.join(', ')}`)
+    }
+    console.log('\nRestart Claude Code to connect the new server.')
+  })
+
+program
+  .command('remove <server>')
+  .description('Remove an MCP server (e.g. prism remove github)')
+  .option('-c, --config <path>', 'Path to prism.toml', 'prism.toml')
+  .action((serverName: string, options: { config: string }) => {
+    const configPath = path.resolve(options.config)
+
+    if (!fs.existsSync(configPath)) {
+      console.error(`Config not found: ${configPath}`)
+      process.exit(1)
+      return
+    }
+
+    const content = fs.readFileSync(configPath, 'utf-8')
+    if (!content.includes(`name = "${serverName}"`)) {
+      console.error(`Server "${serverName}" not found in ${options.config}`)
+      process.exit(1)
+      return
+    }
+
+    // Remove the server block from TOML
+    const lines = content.split('\n')
+    const result: string[] = []
+    let skipping = false
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+
+      if (line.trim() === '[[servers]]') {
+        const nameLineIdx = lines.findIndex(
+          (l, j) => j > i && j < i + 10 && l.trim().startsWith('name') && l.includes(`"${serverName}"`)
+        )
+        if (nameLineIdx !== -1) {
+          skipping = true
+          continue
+        }
+      }
+
+      if (skipping) {
+        if (line.trim().startsWith('[[') || (line.trim().startsWith('[') && !line.trim().startsWith('[['))) {
+          skipping = false
+        } else {
+          continue
+        }
+      }
+
+      result.push(line)
+    }
+
+    fs.writeFileSync(configPath, result.join('\n'))
+    console.log(`Removed ${serverName}`)
+    console.log('Restart Claude Code to apply.')
+  })
+
+program
+  .command('list')
+  .description('List configured MCP servers')
+  .option('-c, --config <path>', 'Path to prism.toml', 'prism.toml')
+  .action((options: { config: string }) => {
+    const configPath = path.resolve(options.config)
+
+    if (!fs.existsSync(configPath)) {
+      console.log('No config found. Run "prism init" first.')
+      return
+    }
+
+    const configResult = loadConfig(options.config)
+    if (!configResult.ok) {
+      console.error(configResult.error.message)
+      process.exit(1)
+      return
+    }
+
+    const servers = configResult.value.servers
+    if (servers.length === 0) {
+      console.log('No servers configured. Run "prism add" to see available servers.')
+      return
+    }
+
+    console.log(`Configured servers (${servers.length}):\n`)
+    for (const s of servers) {
+      const known = findKnownServer(s.name)
+      const desc = known ? ` — ${known.description}` : ''
+      const status = s.enabled === false ? ' (disabled)' : ''
+      console.log(`  ${s.name}${desc}${status}`)
+    }
+  })
+
+function promptInput(message: string): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+  return new Promise((resolve) => {
+    rl.question(message, (answer) => {
+      rl.close()
+      resolve(answer.trim())
+    })
+  })
+}
 
 const envCmd = program
   .command('env')
