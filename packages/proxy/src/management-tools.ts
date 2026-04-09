@@ -2,6 +2,7 @@ import type { McpServerConfig } from 'prism-mcp-types'
 import { ToolRegistry } from './tool-registry'
 import { TraceStore } from './trace-store'
 import { SchemaCompressor } from './schema-compressor'
+import { KNOWN_SERVERS, findKnownServer } from './server-registry'
 import fs from 'fs'
 import pino from 'pino'
 
@@ -53,24 +54,25 @@ export class ManagementTools {
         inputSchema: { type: 'object' },
       },
       {
+        name: 'prism_available_servers',
+        description: 'List MCP servers available to install through Prism. Shows name, description, and required API keys.',
+        inputSchema: { type: 'object' },
+      },
+      {
         name: 'prism_add_server',
-        description: 'Add a new MCP server to Prism. Connects immediately and persists to config.',
+        description: 'Add an MCP server to Prism by name (e.g. "github", "fetch", "memory"). Use prism_available_servers to see options. For servers that need API keys, pass them in the env parameter. Connects immediately and persists to config. For custom servers not in the registry, provide command and args.',
         inputSchema: {
           type: 'object',
           properties: {
-            name: { type: 'string', description: 'Unique server name' },
-            command: { type: 'string', description: 'Command to spawn the server (e.g. "npx")' },
-            args: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Command arguments (e.g. ["@modelcontextprotocol/server-filesystem", "/home/user"])',
-            },
+            name: { type: 'string', description: 'Server name from the registry (e.g. "github", "fetch") or a custom name' },
+            command: { type: 'string', description: 'Custom server command (only needed for servers not in the registry)' },
+            args: { type: 'array', items: { type: 'string' }, description: 'Custom server args (only needed for servers not in the registry)' },
             env: {
               type: 'object',
-              description: 'Environment variables (e.g. {"GITHUB_TOKEN": "ghp_..."})',
+              description: 'API keys / secrets the server needs (e.g. {"GITHUB_TOKEN": "ghp_..."})',
             },
           },
-          required: ['name', 'command'],
+          required: ['name'],
         },
       },
       {
@@ -131,6 +133,8 @@ export class ManagementTools {
       switch (name) {
         case 'prism_list_servers':
           return this.listServers()
+        case 'prism_available_servers':
+          return this.availableServers()
         case 'prism_add_server':
           return await this.addServer(args)
         case 'prism_remove_server':
@@ -175,24 +179,84 @@ export class ManagementTools {
     return { content: [{ type: 'text', text: lines.join('\n') }] }
   }
 
+  private availableServers(): { content: Array<{ type: 'text'; text: string }> } {
+    const connected = new Set(this.registry.getAllTools().map(t => t.serverName))
+    const lines: string[] = ['Available MCP servers:\n']
+
+    for (const s of KNOWN_SERVERS) {
+      const status = connected.has(s.name) ? ' (already connected)' : ''
+      const keys = s.envKeys.length > 0 ? ` [needs: ${s.envKeys.join(', ')}]` : ''
+      lines.push(`- **${s.name}**: ${s.description}${keys}${status}`)
+    }
+
+    lines.push('\nTo add one, use prism_add_server with the name.')
+    lines.push('For servers that need API keys, ask the user for the key and pass it in the env parameter.')
+
+    return { content: [{ type: 'text', text: lines.join('\n') }] }
+  }
+
   private async addServer(
     args: Record<string, unknown>,
   ): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
     const name = args.name as string
-    const command = args.command as string
-    const serverArgs = (args.args as string[]) ?? []
+    const customCommand = args.command as string | undefined
+    const customArgs = args.args as string[] | undefined
     const env = (args.env as Record<string, string>) ?? undefined
 
-    if (!name || !command) {
-      return { content: [{ type: 'text', text: 'Error: name and command are required' }], isError: true }
+    if (!name) {
+      return { content: [{ type: 'text', text: 'Error: name is required. Use prism_available_servers to see options.' }], isError: true }
     }
 
-    // Check if already exists
+    // Check if already connected
     if (this.registry.getToolsByServer(name).length > 0) {
-      return { content: [{ type: 'text', text: `Error: server "${name}" already exists` }], isError: true }
+      return { content: [{ type: 'text', text: `Error: server "${name}" already exists.` }], isError: true }
     }
 
-    const config: McpServerConfig = { name, command, args: serverArgs, env, enabled: true }
+    // Look up in registry, fall back to custom command/args
+    const known = findKnownServer(name)
+    let serverCommand: string
+    let serverArgs: string[]
+
+    if (known) {
+      serverCommand = known.command
+      serverArgs = known.args
+
+      // Check required env keys
+      const missingKeys = known.envKeys.filter(k => !env?.[k] && !process.env[k])
+      if (missingKeys.length > 0) {
+        return {
+          content: [{
+            type: 'text',
+            text: `Server "${name}" needs these API keys: ${missingKeys.join(', ')}\n\nAsk the user for ${missingKeys.length === 1 ? 'the key' : 'the keys'} and call prism_add_server again with env: {${missingKeys.map(k => `"${k}": "..."`).join(', ')}}`,
+          }],
+          isError: true,
+        }
+      }
+    } else if (customCommand) {
+      serverCommand = customCommand
+      serverArgs = customArgs ?? []
+    } else {
+      return {
+        content: [{
+          type: 'text',
+          text: `Server "${name}" is not in the registry. Provide command and args to add a custom server, or use prism_available_servers to see known servers.`,
+        }],
+        isError: true,
+      }
+    }
+
+    // Save provided env keys to .env for persistence
+    if (env) {
+      this.saveEnvKeys(env)
+    }
+
+    const config: McpServerConfig = {
+      name,
+      command: serverCommand,
+      args: serverArgs,
+      env,
+      enabled: true,
+    }
 
     // Connect to the new server
     const result = await this.registry.registerServer(config)
@@ -212,7 +276,7 @@ export class ManagementTools {
     const toolNames = result.value.map(t => t.name)
     this.logger.info({ server: name, tools: toolNames.length }, 'Server added via management tool')
 
-    // Notify the agent that tools changed — triggers re-fetch of tools/list
+    // Notify the agent that tools changed
     if (this.onToolsChanged) {
       await this.onToolsChanged()
     }
@@ -379,10 +443,7 @@ export class ManagementTools {
         lines.push(`args = [${config.args.map(a => `"${a}"`).join(', ')}]`)
       }
 
-      if (config.env && Object.keys(config.env).length > 0) {
-        const envParts = Object.entries(config.env).map(([k, v]) => `${k} = "${v}"`)
-        lines.push(`env = { ${envParts.join(', ')} }`)
-      }
+      // Env keys are saved to .env, not to TOML — keeps secrets out of config
 
       content += lines.join('\n') + '\n'
       fs.writeFileSync(this.configPath, content)
@@ -432,6 +493,48 @@ export class ManagementTools {
       this.logger.debug({ server: name }, 'Server removed from config')
     } catch (error) {
       this.logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'Failed to remove server from config')
+    }
+  }
+
+  /**
+   * Save env keys to the .env file next to prism.toml.
+   * Also sets them in process.env so child processes get them immediately.
+   */
+  private saveEnvKeys(env: Record<string, string>): void {
+    // Set in process.env immediately
+    for (const [key, value] of Object.entries(env)) {
+      process.env[key] = value
+    }
+
+    if (!this.configPath) return
+
+    try {
+      const configDir = this.configPath.substring(0, this.configPath.lastIndexOf('/') + 1) ||
+                        this.configPath.substring(0, this.configPath.lastIndexOf('\\') + 1)
+      const envFilePath = configDir + '.env'
+
+      let content = ''
+      if (fs.existsSync(envFilePath)) {
+        content = fs.readFileSync(envFilePath, 'utf-8')
+      } else {
+        content = '# Prism secrets — managed automatically\n\n'
+      }
+
+      for (const [key, value] of Object.entries(env)) {
+        // Remove existing line for this key if present
+        const lines = content.split('\n')
+        const filtered = lines.filter(l => !l.startsWith(`${key}=`))
+        content = filtered.join('\n')
+
+        // Append new value
+        if (!content.endsWith('\n')) content += '\n'
+        content += `${key}=${value}\n`
+      }
+
+      fs.writeFileSync(envFilePath, content)
+      this.logger.debug({ keys: Object.keys(env) }, 'Env keys saved')
+    } catch (error) {
+      this.logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'Failed to save env keys')
     }
   }
 }

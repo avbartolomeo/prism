@@ -75,7 +75,7 @@ describe('ManagementTools', () => {
     expect(text).toContain('greet')
   })
 
-  it('should add a new server dynamically', async () => {
+  it('should add a new custom server dynamically', async () => {
     await setup()
 
     const result = await client.callTool({
@@ -109,6 +109,18 @@ describe('ManagementTools', () => {
     expect(result.isError).toBe(true)
     const text = (result.content as Array<{ type: string; text: string }>)[0].text
     expect(text).toContain('already exists')
+  })
+
+  it('should list available servers from registry', async () => {
+    await setup()
+
+    const result = await client.callTool({ name: 'prism_available_servers', arguments: {} })
+    const text = (result.content as Array<{ type: string; text: string }>)[0].text
+
+    expect(text).toContain('github')
+    expect(text).toContain('fetch')
+    expect(text).toContain('memory')
+    expect(text).toContain('GITHUB_TOKEN')
   })
 
   it('should remove a server', async () => {

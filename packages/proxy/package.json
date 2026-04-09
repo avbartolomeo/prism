@@ -1,6 +1,6 @@
 {
   "name": "prism-mcp-proxy",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Core MCP proxy engine for Prism",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
