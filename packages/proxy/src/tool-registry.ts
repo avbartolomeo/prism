@@ -27,10 +27,12 @@ export class ToolRegistry {
     try {
       this.logger.info({ server: config.name, command: config.command, args: config.args }, 'Connecting to MCP server')
 
+      // Always pass full process.env so .env vars (loaded by dotenv) reach child processes.
+      // Server-specific env from TOML overrides process.env.
       const transport = new StdioClientTransport({
         command: config.command,
         args: config.args,
-        env: config.env ? { ...process.env, ...config.env } as Record<string, string> : undefined,
+        env: { ...process.env, ...(config.env ?? {}) } as Record<string, string>,
         stderr: 'pipe',
       })
 
