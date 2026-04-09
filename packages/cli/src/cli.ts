@@ -182,7 +182,7 @@ args = ["@modelcontextprotocol/server-filesystem", "${homeDir}"]
     console.log('')
     console.log('Next steps:')
     console.log(`  1. Edit ${options.output} — add your MCP servers`)
-    console.log(`  2. Add secrets to .env (same folder) — NOT in prism.toml`)
+    console.log('  2. Add API keys:  prism env set GITHUB_TOKEN ghp_your_token')
     console.log(`  3. Configure Claude Code:`)
     console.log('')
     console.log('     Add to .mcp.json (project) or ~/.claude/.mcp.json (global):')
@@ -195,14 +195,97 @@ args = ["@modelcontextprotocol/server-filesystem", "${homeDir}"]
     console.log('       }')
     console.log('     }')
     console.log('')
-    console.log('  3. Open Claude Code — Prism starts automatically')
+    console.log('  4. Open Claude Code — Prism starts automatically')
   })
+
+const envCmd = program
+  .command('env')
+  .description('Manage API keys and secrets')
+
+envCmd
+  .command('set <key> <value>')
+  .description('Set a secret (e.g. prism env set GITHUB_TOKEN ghp_xxx)')
+  .option('-c, --config <path>', 'Path to prism.toml (to find .env)', 'prism.toml')
+  .action((key: string, value: string, options: { config: string }) => {
+    const envPath = resolveEnvPath(options.config)
+    const envVars = parseEnvFile(envPath)
+    envVars.set(key, value)
+    writeEnvFile(envPath, envVars)
+    console.log(`Set ${key}`)
+  })
+
+envCmd
+  .command('remove <key>')
+  .description('Remove a secret')
+  .option('-c, --config <path>', 'Path to prism.toml (to find .env)', 'prism.toml')
+  .action((key: string, options: { config: string }) => {
+    const envPath = resolveEnvPath(options.config)
+    const envVars = parseEnvFile(envPath)
+    if (!envVars.has(key)) {
+      console.error(`Key not found: ${key}`)
+      process.exit(1)
+      return
+    }
+    envVars.delete(key)
+    writeEnvFile(envPath, envVars)
+    console.log(`Removed ${key}`)
+  })
+
+envCmd
+  .command('list')
+  .description('List configured secrets (values hidden)')
+  .option('-c, --config <path>', 'Path to prism.toml (to find .env)', 'prism.toml')
+  .action((options: { config: string }) => {
+    const envPath = resolveEnvPath(options.config)
+    const envVars = parseEnvFile(envPath)
+    if (envVars.size === 0) {
+      console.log('No secrets configured.')
+      console.log('Add one with: prism env set GITHUB_TOKEN ghp_your_token')
+      return
+    }
+    console.log('Configured secrets:\n')
+    for (const [key, value] of envVars) {
+      const masked = value.slice(0, 4) + '...' + value.slice(-4)
+      console.log(`  ${key} = ${masked}`)
+    }
+  })
+
+function resolveEnvPath(configPath: string): string {
+  const configDir = path.dirname(path.resolve(configPath))
+  return path.join(configDir, '.env')
+}
+
+function parseEnvFile(envPath: string): Map<string, string> {
+  const vars = new Map<string, string>()
+  if (!fs.existsSync(envPath)) return vars
+
+  const content = fs.readFileSync(envPath, 'utf-8')
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eqIdx = trimmed.indexOf('=')
+    if (eqIdx === -1) continue
+    const key = trimmed.slice(0, eqIdx).trim()
+    const value = trimmed.slice(eqIdx + 1).trim()
+    vars.set(key, value)
+  }
+  return vars
+}
+
+function writeEnvFile(envPath: string, vars: Map<string, string>): void {
+  const lines = ['# Prism secrets — managed by "prism env" command', '']
+  for (const [key, value] of vars) {
+    lines.push(`${key}=${value}`)
+  }
+  lines.push('')
+  fs.writeFileSync(envPath, lines.join('\n'))
+}
 
 program
   .command('status')
   .description('Show Prism status')
   .action(() => {
-    console.log('Prism v0.1.1')
+    console.log('Prism v0.1.8')
     console.log('Status: not running (use "prism start")')
   })
 
