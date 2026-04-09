@@ -93,11 +93,19 @@ export class PrismProxy {
   async initialize(): Promise<Result<void>> {
     this.logger.info({ servers: this.config.servers.length }, 'Initializing Prism proxy')
 
-    for (const server of this.config.servers) {
-      if (server.enabled === false) continue
-      const result = await this.registry.registerServer(server)
-      if (!result.ok) {
-        this.logger.warn({ server: server.name, error: result.error.message }, 'Failed to register server')
+    // Connect to all servers in parallel for faster startup
+    const enabled = this.config.servers.filter(s => s.enabled !== false)
+    const results = await Promise.allSettled(
+      enabled.map(server => this.registry.registerServer(server))
+    )
+
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i]
+      if (result.status === 'rejected' || (result.status === 'fulfilled' && !result.value.ok)) {
+        const error = result.status === 'rejected'
+          ? result.reason
+          : (result.value as { ok: false; error: Error }).error
+        this.logger.warn({ server: enabled[i].name, error: error.message }, 'Failed to register server')
       }
     }
 
