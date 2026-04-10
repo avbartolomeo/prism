@@ -112,6 +112,11 @@ export class ManagementTools {
         description: 'Check if any tools are being called repeatedly or failing in loops.',
         inputSchema: { type: 'object' },
       },
+      {
+        name: 'prism_version',
+        description: 'Show the current Prism version and status.',
+        inputSchema: { type: 'object' },
+      },
     ]
   }
 
@@ -145,6 +150,8 @@ export class ManagementTools {
           return this.getCosts(args)
         case 'prism_detect_loops':
           return this.detectLoops()
+        case 'prism_version':
+          return this.version()
         default:
           return { content: [{ type: 'text', text: `Unknown management tool: ${name}` }], isError: true }
       }
@@ -419,6 +426,25 @@ export class ManagementTools {
     if (callLoops.length > 0) {
       lines.push(`Call loops (tools called excessively): ${callLoops.join(', ')}`)
     }
+
+    return { content: [{ type: 'text', text: lines.join('\n') }] }
+  }
+
+  private version(): { content: Array<{ type: 'text'; text: string }> } {
+    const serverCount = new Set(this.registry.getAllTools().map(t => t.serverName)).size
+    const toolCount = this.registry.getAllTools().length
+
+    const lines = [
+      'Prism MCP Context Router',
+      `Version: 0.1.16`,
+      `Session: ${this.sessionId.slice(0, 8)}`,
+      `Servers: ${serverCount} connected`,
+      `Tools: ${toolCount} discovered`,
+      `Tracing: ${this.traceStore ? 'enabled' : 'disabled'}`,
+      '',
+      'GitHub: github.com/avbartolomeo/prism',
+      'npm: npmjs.com/package/prism-mcp',
+    ]
 
     return { content: [{ type: 'text', text: lines.join('\n') }] }
   }
