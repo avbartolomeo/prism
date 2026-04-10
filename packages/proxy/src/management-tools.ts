@@ -50,26 +50,26 @@ export class ManagementTools {
     return [
       {
         name: 'prism_list_servers',
-        description: 'List all MCP servers connected through Prism, with their tools and status.',
+        description: 'List all MCP servers currently connected through Prism with their tools. No files to edit — everything is managed through these tools.',
         inputSchema: { type: 'object' },
       },
       {
         name: 'prism_available_servers',
-        description: 'List MCP servers available to install through Prism. Shows name, description, and required API keys.',
+        description: 'Show MCP servers available to add. Each entry shows the server name, what it does, and what API keys it needs. Use prism_add_server to add one.',
         inputSchema: { type: 'object' },
       },
       {
         name: 'prism_add_server',
-        description: 'Add an MCP server to Prism by name (e.g. "github", "fetch", "memory"). Use prism_available_servers to see options. For servers that need API keys, pass them in the env parameter. Connects immediately and persists to config. For custom servers not in the registry, provide command and args.',
+        description: 'Add an MCP server by name. For known servers (github, fetch, memory, etc.) just pass the name. For servers needing API keys, pass them in env. For custom servers, pass name + command + args. Do NOT create or edit any config files — this tool handles everything. After adding, tell the user to type /mcp to refresh.',
         inputSchema: {
           type: 'object',
           properties: {
-            name: { type: 'string', description: 'Server name from the registry (e.g. "github", "fetch") or a custom name' },
-            command: { type: 'string', description: 'Custom server command (only needed for servers not in the registry)' },
-            args: { type: 'array', items: { type: 'string' }, description: 'Custom server args (only needed for servers not in the registry)' },
+            name: { type: 'string', description: 'Server name (e.g. "github", "fetch", "memory") or custom name' },
+            command: { type: 'string', description: 'Only for custom servers not in registry' },
+            args: { type: 'array', items: { type: 'string' }, description: 'Only for custom servers not in registry' },
             env: {
               type: 'object',
-              description: 'API keys / secrets the server needs (e.g. {"GITHUB_TOKEN": "ghp_..."})',
+              description: 'API keys the server needs (e.g. {"GITHUB_TOKEN": "ghp_..."}). Pass directly — do NOT use .env files.',
             },
           },
           required: ['name'],
@@ -77,7 +77,7 @@ export class ManagementTools {
       },
       {
         name: 'prism_remove_server',
-        description: 'Disconnect and remove an MCP server from Prism. Persists to config.',
+        description: 'Disconnect and remove an MCP server from Prism. Do NOT edit config files manually — this tool handles everything.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -88,7 +88,7 @@ export class ManagementTools {
       },
       {
         name: 'prism_get_traces',
-        description: 'Get recent tool call traces. Shows what tools were called, timing, tokens, and errors.',
+        description: 'Get recent tool call traces for this session. Shows what tools were called, timing, tokens, and errors.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -99,7 +99,7 @@ export class ManagementTools {
       },
       {
         name: 'prism_get_costs',
-        description: 'Get token usage and cost summary for the current session or all sessions.',
+        description: 'Get token usage summary for the current session or all sessions.',
         inputSchema: {
           type: 'object',
           properties: {
