@@ -4,9 +4,7 @@ import { TraceStore } from './trace-store'
 import path from 'path'
 import fs from 'fs'
 import pino from 'pino'
-
-// Read version from package.json at build time
-const VERSION = '0.1.3'
+import { VERSION } from './version'
 
 /**
  * DashboardServer — HTTP API + static file server for the Prism dashboard.

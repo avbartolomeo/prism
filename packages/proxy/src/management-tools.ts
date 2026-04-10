@@ -3,6 +3,7 @@ import { ToolRegistry } from './tool-registry'
 import { TraceStore } from './trace-store'
 import { SchemaCompressor } from './schema-compressor'
 import { KNOWN_SERVERS, findKnownServer } from './server-registry'
+import { VERSION } from './version'
 import fs from 'fs'
 import pino from 'pino'
 
@@ -436,7 +437,7 @@ export class ManagementTools {
 
     const lines = [
       'Prism MCP Context Router',
-      `Version: 0.1.16`,
+      `Version: ${VERSION}`,
       `Session: ${this.sessionId.slice(0, 8)}`,
       `Servers: ${serverCount} connected`,
       `Tools: ${toolCount} discovered`,

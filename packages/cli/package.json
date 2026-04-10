@@ -1,6 +1,6 @@
 {
   "name": "prism-mcp",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "MCP Context Router + Agent Observability — reduce token waste, see what your AI agents do",
   "main": "./dist/index.js",
   "bin": {
