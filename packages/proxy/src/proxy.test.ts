@@ -102,7 +102,7 @@ describe('PrismProxy', () => {
     // 6 management tools are always included, backend tools are filtered by budget
     const mgmtCount = result.tools.filter(t => t.name.startsWith('prism_')).length
     const backendCount = result.tools.length - mgmtCount
-    expect(mgmtCount).toBe(7)
+    expect(mgmtCount).toBe(8)
     expect(backendCount).toBeLessThan(3)
   })
 

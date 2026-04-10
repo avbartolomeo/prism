@@ -253,11 +253,6 @@ export class ManagementTools {
       }
     }
 
-    // Save provided env keys to .env for persistence
-    if (env) {
-      this.saveEnvKeys(env)
-    }
-
     const config: McpServerConfig = {
       name,
       command: serverCommand,
@@ -470,7 +465,10 @@ export class ManagementTools {
         lines.push(`args = [${config.args.map(a => `"${a}"`).join(', ')}]`)
       }
 
-      // Env keys are saved to .env, not to TOML — keeps secrets out of config
+      if (config.env && Object.keys(config.env).length > 0) {
+        const envParts = Object.entries(config.env).map(([k, v]) => `${k} = "${v}"`)
+        lines.push(`env = { ${envParts.join(', ')} }`)
+      }
 
       content += lines.join('\n') + '\n'
       fs.writeFileSync(this.configPath, content)
@@ -523,45 +521,4 @@ export class ManagementTools {
     }
   }
 
-  /**
-   * Save env keys to the .env file next to prism.toml.
-   * Also sets them in process.env so child processes get them immediately.
-   */
-  private saveEnvKeys(env: Record<string, string>): void {
-    // Set in process.env immediately
-    for (const [key, value] of Object.entries(env)) {
-      process.env[key] = value
-    }
-
-    if (!this.configPath) return
-
-    try {
-      const configDir = this.configPath.substring(0, this.configPath.lastIndexOf('/') + 1) ||
-                        this.configPath.substring(0, this.configPath.lastIndexOf('\\') + 1)
-      const envFilePath = configDir + '.env'
-
-      let content = ''
-      if (fs.existsSync(envFilePath)) {
-        content = fs.readFileSync(envFilePath, 'utf-8')
-      } else {
-        content = '# Prism secrets — managed automatically\n\n'
-      }
-
-      for (const [key, value] of Object.entries(env)) {
-        // Remove existing line for this key if present
-        const lines = content.split('\n')
-        const filtered = lines.filter(l => !l.startsWith(`${key}=`))
-        content = filtered.join('\n')
-
-        // Append new value
-        if (!content.endsWith('\n')) content += '\n'
-        content += `${key}=${value}\n`
-      }
-
-      fs.writeFileSync(envFilePath, content)
-      this.logger.debug({ keys: Object.keys(env) }, 'Env keys saved')
-    } catch (error) {
-      this.logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'Failed to save env keys')
-    }
-  }
 }
