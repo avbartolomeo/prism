@@ -12,7 +12,7 @@ const program = new Command()
 program
   .name('prism')
   .description('MCP Context Router + Agent Observability')
-  .version('0.1.11')
+  .version('0.2.2')
 
 program
   .command('start')
@@ -64,10 +64,17 @@ program
 
     // Start dashboard if port is configured
     let dashboard: DashboardServer | undefined
-    const traceStore = proxy.getTraceStore()
-    if (config.dashboardPort && traceStore) {
-      dashboard = new DashboardServer(traceStore, logger, proxy.getRegistry())
-      await dashboard.start(config.dashboardPort)
+    if (config.dashboardPort) {
+      const traceStore = proxy.getTraceStore()
+      if (traceStore) {
+        dashboard = new DashboardServer(traceStore, logger, proxy.getRegistry())
+        await dashboard.start(config.dashboardPort)
+        logger.info({ port: config.dashboardPort }, 'Dashboard started')
+      } else {
+        logger.warn('Dashboard requires [traces] section in config. Add: [traces]\\npath = "./prism-traces.db"')
+      }
+    } else {
+      logger.info('Dashboard disabled (no [dashboard] port in config)')
     }
 
     // Start serving MCP protocol via stdio
@@ -256,7 +263,7 @@ program
   .command('status')
   .description('Show Prism status')
   .action(() => {
-    console.log('Prism v0.1.12')
+    console.log('Prism v0.2.2')
     console.log('Status: not running (use "prism start")')
   })
 
