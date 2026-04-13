@@ -1,5 +1,6 @@
 import express from 'express'
 import type { Server } from 'http'
+import { ToolRegistry } from './tool-registry'
 import { TraceStore } from './trace-store'
 import path from 'path'
 import fs from 'fs'
@@ -16,6 +17,7 @@ export class DashboardServer {
   constructor(
     private traceStore: TraceStore,
     private logger: pino.Logger,
+    private registry?: ToolRegistry,
   ) {
     this.app = express()
     this.setupRoutes()
@@ -51,6 +53,21 @@ export class DashboardServer {
       }
       const traces = this.traceStore.getBySession(req.params.id)
       res.json({ summary, traces })
+    })
+
+    this.app.get('/api/servers', (_req, res) => {
+      if (!this.registry) {
+        res.json([])
+        return
+      }
+      const allTools = this.registry.getAllTools()
+      const serverMap = new Map<string, { name: string; tools: string[] }>()
+      for (const tool of allTools) {
+        const entry = serverMap.get(tool.serverName) ?? { name: tool.serverName, tools: [] }
+        entry.tools.push(tool.name)
+        serverMap.set(tool.serverName, entry)
+      }
+      res.json([...serverMap.values()])
     })
 
     this.app.get('/api/health', (_req, res) => {
@@ -193,6 +210,7 @@ export class DashboardServer {
       <div class="tabs">
         <button class="tab active" onclick="showTab('traces',this)">Traces</button>
         <button class="tab" onclick="showTab('sessions',this)">Sessions</button>
+        <button class="tab" onclick="showTab('servers',this)">Servers</button>
       </div>
       <div class="filters" id="filters"></div>
     </div>
@@ -221,10 +239,14 @@ export class DashboardServer {
           allTraces = await res.json();
           renderFilters();
           applyFilters();
-        } else {
+        } else if (currentTab === 'sessions') {
           document.getElementById('filters').innerHTML = '';
           const res = await fetch('/api/sessions?limit=20');
           renderSessions(await res.json());
+        } else if (currentTab === 'servers') {
+          document.getElementById('filters').innerHTML = '';
+          const res = await fetch('/api/servers');
+          renderServers(await res.json());
         }
       } catch (e) {
         document.getElementById('content').innerHTML = '<div class="empty"><h3>Connection error</h3>' + e.message + '</div>';
@@ -355,6 +377,32 @@ export class DashboardServer {
         stat(totalCalls, 'Total Calls') +
         stat(totalTokens.toLocaleString(), 'Total Tokens') +
         stat(totalErrors, 'Total Errors', totalErrors > 0);
+    }
+
+    function renderServers(servers) {
+      if (!servers.length) {
+        document.getElementById('stats').innerHTML = '';
+        document.getElementById('content').innerHTML = '<div class="empty"><h3>No servers connected</h3></div>';
+        return;
+      }
+      const totalTools = servers.reduce((s, x) => s + x.tools.length, 0);
+      document.getElementById('stats').innerHTML =
+        stat(servers.length, 'Servers') +
+        stat(totalTools, 'Total Tools');
+      let html = '';
+      for (const s of servers) {
+        html += '<div style="background:#1e293b;border:1px solid #334155;border-radius:10px;padding:20px;margin-bottom:16px">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
+        html += '<div><span style="font-size:16px;font-weight:600;color:#c4b5fd">' + s.name + '</span>';
+        html += '<span style="color:#64748b;font-size:13px;margin-left:12px">' + s.tools.length + ' tools</span></div>';
+        html += '<span class="badge badge-ok">connected</span></div>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+        for (const t of s.tools) {
+          html += '<span style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:4px 10px;font-size:12px;color:#94a3b8">' + t + '</span>';
+        }
+        html += '</div></div>';
+      }
+      document.getElementById('content').innerHTML = html;
     }
 
     fetchData();

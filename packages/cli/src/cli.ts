@@ -66,7 +66,7 @@ program
     let dashboard: DashboardServer | undefined
     const traceStore = proxy.getTraceStore()
     if (config.dashboardPort && traceStore) {
-      dashboard = new DashboardServer(traceStore, logger)
+      dashboard = new DashboardServer(traceStore, logger, proxy.getRegistry())
       await dashboard.start(config.dashboardPort)
     }
 
