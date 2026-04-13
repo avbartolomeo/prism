@@ -27,8 +27,6 @@ export class ToolRegistry {
     try {
       this.logger.info({ server: config.name, command: config.command, args: config.args }, 'Connecting to MCP server')
 
-      // Always pass full process.env so .env vars (loaded by dotenv) reach child processes.
-      // Server-specific env from TOML overrides process.env.
       const transport = new StdioClientTransport({
         command: config.command,
         args: config.args,
@@ -37,12 +35,23 @@ export class ToolRegistry {
       })
 
       const client = new Client(
-        { name: 'prism-proxy', version: '0.1.0' },
+        { name: 'prism-proxy', version: '0.2.0' },
         { capabilities: {} },
       )
 
-      // Connect and perform handshake
-      await client.connect(transport)
+      // Connect with timeout — don't let a broken server hang forever
+      const connectPromise = client.connect(transport)
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Connection timeout after 30s`)), 30000)
+      )
+
+      try {
+        await Promise.race([connectPromise, timeoutPromise])
+      } catch (connectError) {
+        // Clean up the transport if connection failed
+        try { await transport.close() } catch { /* ignore */ }
+        throw connectError
+      }
 
       this.logger.info({ server: config.name }, 'MCP handshake complete')
 

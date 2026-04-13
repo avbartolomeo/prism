@@ -99,18 +99,27 @@ export class PrismProxy {
       enabled.map(server => this.registry.registerServer(server))
     )
 
+    const connected: string[] = []
+    const failed: string[] = []
+
     for (let i = 0; i < results.length; i++) {
       const result = results[i]
       if (result.status === 'rejected' || (result.status === 'fulfilled' && !result.value.ok)) {
         const error = result.status === 'rejected'
           ? result.reason
           : (result.value as { ok: false; error: Error }).error
-        this.logger.warn({ server: enabled[i].name, error: error.message }, 'Failed to register server')
+        this.logger.warn({ server: enabled[i].name, error: error.message }, 'Failed to register server — skipping')
+        failed.push(enabled[i].name)
+      } else {
+        connected.push(enabled[i].name)
       }
     }
 
     const tools = this.registry.getAllTools()
-    this.logger.info({ totalTools: tools.length }, 'Tool registry built')
+    this.logger.info(
+      { totalTools: tools.length, connected, failed },
+      `Tool registry built — ${connected.length} servers connected, ${failed.length} failed`,
+    )
 
     // Compress all tool descriptions
     for (const tool of tools) {
