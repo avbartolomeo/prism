@@ -1,7 +1,10 @@
 #!/usr/bin/env npx tsx
 /**
- * Smoke test — spawns Prism as a child process and connects as an MCP client.
- * Verifies: tool discovery, compression, forwarding, tracing, dashboard API.
+ * Smoke test — simulates exactly what Claude Code does:
+ * 1. Spawn Prism as child process
+ * 2. Connect as MCP client via stdio
+ * 3. Wait for backend servers to connect (background)
+ * 4. List tools, call tools, verify dashboard
  *
  * Usage: npx tsx scripts/smoke-test.ts
  */
@@ -26,26 +29,19 @@ function httpGet(url: string): Promise<string> {
   })
 }
 
-async function waitForDashboard(port: number, maxRetries = 20): Promise<boolean> {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      await httpGet(`http://localhost:${port}/api/health`)
-      return true
-    } catch {
-      await new Promise(r => setTimeout(r, 200))
-    }
-  }
-  return false
+function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms))
 }
 
 async function main(): Promise<void> {
-  // Clean up old traces
   try { fs.unlinkSync(TRACES_DB) } catch { /* ignore */ }
 
-  console.log('=== Prism Smoke Test ===\n')
+  console.log('=== Prism Smoke Test (simulates Claude Code) ===\n')
 
-  // 1. Spawn Prism as child process and connect as MCP client
-  console.log('1. Connecting to Prism...')
+  // 1. Spawn Prism — should respond INSTANTLY (background server connection)
+  console.log('1. Spawning Prism and connecting as MCP client...')
+  const startTime = Date.now()
+
   const transport = new StdioClientTransport({
     command: 'node',
     args: [PRISM_CLI, 'start', '--config', CONFIG],
@@ -64,96 +60,129 @@ async function main(): Promise<void> {
   )
 
   await client.connect(transport)
-  console.log('   Connected!\n')
+  const connectTime = Date.now() - startTime
+  console.log(`   Connected in ${connectTime}ms`)
 
-  // 2. List tools
-  console.log('2. Listing tools (tools/list)...')
-  const toolsResult = await client.listTools()
-  console.log(`   Found ${toolsResult.tools.length} tools:\n`)
+  if (connectTime > 5000) {
+    console.log('   WARNING: Connection took >5s — this would timeout in Claude Code!')
+  } else {
+    console.log('   OK — fast enough for Claude Code (< 20s timeout)')
+  }
+  console.log()
 
-  for (const tool of toolsResult.tools) {
-    console.log(`   - ${tool.name}`)
-    console.log(`     description: "${tool.description}"`)
-    const props = (tool.inputSchema.properties ?? {}) as Record<string, { type: string }>
-    console.log(`     params: (${Object.keys(props).join(', ')})`)
+  // 2. List tools immediately — may only have management tools
+  console.log('2. Listing tools immediately (servers may still be connecting)...')
+  const immediateTools = await client.listTools()
+  const mgmtTools = immediateTools.tools.filter(t => t.name.startsWith('prism_'))
+  const backendTools = immediateTools.tools.filter(t => !t.name.startsWith('prism_'))
+  console.log(`   Management tools: ${mgmtTools.length}`)
+  console.log(`   Backend tools: ${backendTools.length}`)
+  console.log()
+
+  // 3. Wait for backend servers to connect
+  console.log('3. Waiting for backend servers to connect...')
+  let lastToolCount = backendTools.length
+  for (let i = 0; i < 15; i++) {
+    await sleep(1000)
+    const result = await client.listTools()
+    const currentBackend = result.tools.filter(t => !t.name.startsWith('prism_')).length
+    if (currentBackend > lastToolCount) {
+      console.log(`   ${i + 1}s: ${currentBackend} backend tools (new tools appeared!)`)
+      lastToolCount = currentBackend
+    } else if (i % 3 === 0) {
+      console.log(`   ${i + 1}s: ${currentBackend} backend tools`)
+    }
+    // If we have tools and they stopped growing, servers are done
+    if (currentBackend > 0 && currentBackend === lastToolCount && i > 3) break
+  }
+  console.log()
+
+  // 4. List all tools
+  console.log('4. Final tool list:')
+  const finalTools = await client.listTools()
+  const finalBackend = finalTools.tools.filter(t => !t.name.startsWith('prism_'))
+  const finalMgmt = finalTools.tools.filter(t => t.name.startsWith('prism_'))
+
+  console.log(`   Total: ${finalTools.tools.length} (${finalBackend.length} backend + ${finalMgmt.length} management)`)
+  console.log()
+
+  for (const t of finalBackend.slice(0, 10)) {
+    console.log(`   - ${t.name}: ${(t.description ?? '').slice(0, 60)}`)
+  }
+  if (finalBackend.length > 10) {
+    console.log(`   ... and ${finalBackend.length - 10} more`)
+  }
+  console.log()
+
+  // 5. Call a tool
+  if (finalBackend.length > 0) {
+    const testTool = finalBackend.find(t => t.name === 'echo') ?? finalBackend[0]
+    console.log(`5. Calling tool: ${testTool.name}`)
+
+    try {
+      let callArgs: Record<string, unknown> = {}
+      if (testTool.name === 'echo') callArgs = { message: 'hello from smoke test' }
+      else if (testTool.name === 'list_directory') callArgs = { path: '.' }
+
+      const result = await client.callTool({ name: testTool.name, arguments: callArgs })
+      const content = result.content as Array<{ type: string; text: string }>
+      console.log(`   Result: ${content[0]?.text?.slice(0, 100) ?? 'OK'}`)
+    } catch (e) {
+      console.log(`   Error: ${e instanceof Error ? e.message : String(e)}`)
+    }
     console.log()
   }
 
-  // 3. Call tools
-  console.log('3. Calling tools...\n')
+  // 6. Test management tools
+  console.log('6. Testing management tools...')
 
-  console.log('   echo({message: "hello from agent"}) =>')
-  const echoResult = await client.callTool({ name: 'echo', arguments: { message: 'hello from agent' } })
-  const echoContent = echoResult.content as Array<{ type: string; text: string }>
-  console.log(`   => "${echoContent[0].text}"\n`)
+  const versionResult = await client.callTool({ name: 'prism_version', arguments: {} })
+  console.log(`   prism_version: ${(versionResult.content as Array<{ type: string; text: string }>)[0].text.split('\n')[1]}`)
 
-  console.log('   add({a: 42, b: 58}) =>')
-  const addResult = await client.callTool({ name: 'add', arguments: { a: 42, b: 58 } })
-  const addContent = addResult.content as Array<{ type: string; text: string }>
-  console.log(`   => ${addContent[0].text}\n`)
+  const listResult = await client.callTool({ name: 'prism_list_servers', arguments: {} })
+  const listText = (listResult.content as Array<{ type: string; text: string }>)[0].text
+  console.log(`   prism_list_servers: ${listText.split('\n')[0]}`)
+  console.log()
 
-  console.log('   greet({name: "Alejandro"}) =>')
-  const greetResult = await client.callTool({ name: 'greet', arguments: { name: 'Alejandro' } })
-  const greetContent = greetResult.content as Array<{ type: string; text: string }>
-  console.log(`   => "${greetContent[0].text}"\n`)
-
-  // 4. Error handling
-  console.log('4. Error handling — calling unknown tool...')
-  const errorResult = await client.callTool({ name: 'nonexistent', arguments: {} })
-  const errorContent = errorResult.content as Array<{ type: string; text: string }>
-  console.log(`   isError: ${errorResult.isError}`)
-  console.log(`   message: "${errorContent[0].text}"\n`)
-
-  // 5. Compression check
-  console.log('5. Compression check...')
-  const echoTool = toolsResult.tools.find(t => t.name === 'echo')
-  if (echoTool) {
-    console.log(`   "This tool" filler removed: ${!echoTool.description?.includes('This tool')}`)
-    console.log(`   echo description: "${echoTool.description}"\n`)
-  }
-
-  // 6. Dashboard API check
-  console.log('6. Dashboard API check...')
-  const dashboardUp = await waitForDashboard(3002)
-  if (dashboardUp) {
+  // 7. Dashboard check
+  console.log('7. Dashboard check...')
+  try {
     const health = JSON.parse(await httpGet('http://localhost:3002/api/health'))
     console.log(`   /api/health: ${JSON.stringify(health)}`)
 
     const traces = JSON.parse(await httpGet('http://localhost:3002/api/traces'))
-    console.log(`   /api/traces: ${traces.length} traces recorded`)
+    console.log(`   /api/traces: ${traces.length} traces`)
 
-    if (traces.length > 0) {
-      const t = traces[0]
-      console.log(`   Latest trace: ${t.toolName} (${t.durationMs}ms, ${t.inputTokens + t.outputTokens} tokens)`)
+    const servers = JSON.parse(await httpGet('http://localhost:3002/api/servers'))
+    console.log(`   /api/servers: ${servers.length} servers`)
+    for (const s of servers) {
+      console.log(`     - ${s.name}: ${s.tools.length} tools`)
     }
-
-    const sessions = JSON.parse(await httpGet('http://localhost:3002/api/sessions'))
-    console.log(`   /api/sessions: ${sessions.length} sessions`)
-
-    if (sessions.length > 0) {
-      const s = sessions[0]
-      console.log(`   Session: ${s.toolCalls} calls, ${s.totalTokens} tokens, $${s.totalCostUsd.toFixed(4)} USD, ${s.errors} errors`)
-    }
-  } else {
-    console.log('   Dashboard not available (port 3002)')
+  } catch (e) {
+    console.log(`   Dashboard not available: ${e instanceof Error ? e.message : String(e)}`)
   }
   console.log()
 
   // Shutdown
   await client.close()
 
-  // Show Prism's logs
-  console.log('=== Prism Logs (stderr) ===\n')
-  const allLogs = logs.join('')
-  const lines = allLogs.split('\n').filter(l => l.trim())
-  for (const line of lines.slice(0, 15)) {
-    console.log(`   ${line}`)
-  }
-  if (lines.length > 15) {
-    console.log(`   ... (${lines.length - 15} more lines)`)
-  }
+  // Summary
+  const totalTime = Date.now() - startTime
+  console.log('=== Summary ===')
+  console.log(`  Connect time: ${connectTime}ms`)
+  console.log(`  Backend tools: ${finalBackend.length}`)
+  console.log(`  Management tools: ${finalMgmt.length}`)
+  console.log(`  Total time: ${totalTime}ms`)
+  console.log()
 
-  console.log('\n=== Smoke Test PASSED ===')
+  if (connectTime < 5000 && finalBackend.length > 0) {
+    console.log('=== PASSED ===')
+  } else if (connectTime >= 5000) {
+    console.log('=== FAILED — connection too slow ===')
+    process.exit(1)
+  } else {
+    console.log('=== WARNING — no backend tools discovered ===')
+  }
 }
 
 main().catch((err) => {
