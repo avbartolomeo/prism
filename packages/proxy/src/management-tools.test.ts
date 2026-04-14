@@ -37,11 +37,12 @@ describe('ManagementTools', () => {
       logger,
     })
 
-    await proxy.initialize()
-
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     const mcpServer = (proxy as unknown as { mcpServer: { connect: (t: InMemoryTransport) => Promise<void> } }).mcpServer
     await mcpServer.connect(serverTransport)
+
+    proxy.startConnecting()
+    await new Promise(r => setTimeout(r, 3000))
 
     client = new Client({ name: 'test-agent', version: '1.0.0' }, { capabilities: {} })
     await client.connect(clientTransport)

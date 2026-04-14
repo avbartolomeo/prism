@@ -1,5 +1,4 @@
-import type { Result, McpServerConfig, McpTool } from 'prism-mcp-types'
-import { ok } from 'prism-mcp-types'
+import type { McpServerConfig, McpTool } from 'prism-mcp-types'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
@@ -18,19 +17,16 @@ export interface PrismProxyConfig {
   servers: McpServerConfig[]
   maxTokenBudget: number
   logger?: pino.Logger
-  /** SQLite path for traces. If set, tracing is enabled. */
   tracePath?: string
-  /** Path to prism.toml config file. If set, management tools can persist changes. */
   configPath?: string
 }
 
 /**
  * PrismProxy — MCP proxy that sits between an AI agent and MCP servers.
  *
- * Acts as an MCP Server (agent connects via stdio) and as MCP Client
- * to each configured backend server. Filters and compresses tool schemas
- * to fit within a token budget. Optionally traces every tool call to SQLite.
- * Exposes management tools for self-administration and introspection.
+ * Starts serving immediately. Connects to backend servers in background
+ * so the agent doesn't timeout waiting. Tools appear progressively as
+ * servers come online.
  */
 export class PrismProxy {
   private logger: pino.Logger
@@ -42,6 +38,9 @@ export class PrismProxy {
   private traceStore: TraceStore | undefined
   private management: ManagementTools
   private sessionId: string
+  private connecting = false
+  private serversReady = 0
+  private serversTotal = 0
 
   constructor(private config: PrismProxyConfig) {
     this.logger = config.logger ?? pino({ name: 'prism-proxy' })
@@ -65,7 +64,7 @@ export class PrismProxy {
     )
 
     this.mcpServer = new Server(
-      { name: 'prism-proxy', version: '0.1.0' },
+      { name: 'prism-proxy', version: '0.2.0' },
       {
         capabilities: {
           tools: {},
@@ -73,8 +72,6 @@ export class PrismProxy {
       },
     )
 
-    // Wire up tool list change notifications — when add/remove server,
-    // notify the agent to re-fetch tools/list so new tools appear immediately
     this.management.setToolsChangedCallback(async () => {
       try {
         await this.mcpServer.sendToolListChanged()
@@ -88,40 +85,61 @@ export class PrismProxy {
   }
 
   /**
-   * Initialize: connect to all backend MCP servers and build tool registry.
+   * Connect to backend servers in background. Returns immediately.
+   * Servers connect one at a time and tools appear as they come online.
    */
-  async initialize(): Promise<Result<void>> {
-    this.logger.info({ servers: this.config.servers.length }, 'Initializing Prism proxy')
-
-    // Connect servers one at a time — large servers (Azure, GitHub) need
-    // resources and fail when competing in parallel
+  startConnecting(): void {
     const enabled = this.config.servers.filter(s => s.enabled !== false)
-    const connected: string[] = []
-    const failed: string[] = []
+    this.serversTotal = enabled.length
+    this.connecting = true
 
-    for (const server of enabled) {
-      const result = await this.registry.registerServer(server)
-      if (!result.ok) {
-        this.logger.warn({ server: server.name, error: result.error.message }, 'Failed to register server — skipping')
-        failed.push(server.name)
-      } else {
-        connected.push(server.name)
+    this.logger.info({ servers: enabled.length }, 'Connecting to backend servers in background')
+
+    // Run in background — don't await
+    this.connectServersSequentially(enabled).catch(err => {
+      this.logger.error({ error: err instanceof Error ? err.message : String(err) }, 'Background connection failed')
+    })
+  }
+
+  private async connectServersSequentially(servers: McpServerConfig[]): Promise<void> {
+    for (const server of servers) {
+      try {
+        const result = await this.registry.registerServer(server)
+        if (result.ok) {
+          // Compress new tools
+          for (const tool of result.value) {
+            tool.compressedDescription = this.compressor.compress(tool.description)
+            tool.tokenCount = this.compressor.estimateTokens(tool.description)
+          }
+          this.serversReady++
+          this.logger.info(
+            { server: server.name, tools: result.value.length, progress: `${this.serversReady}/${this.serversTotal}` },
+            'Server connected',
+          )
+
+          // Notify agent that new tools are available
+          try {
+            await this.mcpServer.sendToolListChanged()
+          } catch { /* agent may not be connected yet */ }
+        } else {
+          this.serversReady++
+          this.logger.warn({ server: server.name, error: result.error.message }, 'Failed to register server — skipping')
+        }
+      } catch (err) {
+        this.serversReady++
+        this.logger.warn(
+          { server: server.name, error: err instanceof Error ? err.message : String(err) },
+          'Failed to register server — skipping',
+        )
       }
     }
 
+    this.connecting = false
     const tools = this.registry.getAllTools()
     this.logger.info(
-      { totalTools: tools.length, connected, failed },
-      `Tool registry built — ${connected.length} servers connected, ${failed.length} failed`,
+      { totalTools: tools.length, servers: this.serversReady },
+      'All servers processed',
     )
-
-    // Compress all tool descriptions
-    for (const tool of tools) {
-      tool.compressedDescription = this.compressor.compress(tool.description)
-      tool.tokenCount = this.compressor.estimateTokens(tool.description)
-    }
-
-    return ok(undefined)
   }
 
   /**
@@ -133,16 +151,11 @@ export class PrismProxy {
     this.logger.info('Prism proxy serving via stdio')
   }
 
-  /**
-   * Set up MCP request handlers for tools/list and tools/call.
-   */
   private setupHandlers(): void {
-    // Handle tools/list — return filtered backend tools + management tools
     this.mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
       const allTools = this.registry.getAllTools()
       const filtered = this.filter.select(allTools)
 
-      // Backend tools (filtered + compressed)
       const backendTools = filtered.map(tool => ({
         name: tool.name,
         description: tool.compressedDescription ?? tool.description,
@@ -154,36 +167,32 @@ export class PrismProxy {
         },
       }))
 
-      // Management tools (always included, not subject to budget)
       const mgmtTools = this.management.getToolDefs()
-
       const tools = [...backendTools, ...mgmtTools]
 
       this.logger.info(
-        { total: allTools.length, returned: backendTools.length, management: mgmtTools.length },
+        { total: allTools.length, returned: backendTools.length, management: mgmtTools.length, connecting: this.connecting },
         'tools/list served',
       )
 
       return { tools }
     })
 
-    // Handle tools/call — route to management tools or backend servers
     this.mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params
 
-      // Check if this is a management tool
       if (this.management.isManagementTool(name)) {
         this.logger.info({ tool: name }, 'Executing management tool')
         return this.management.execute(name, args ?? {})
       }
 
-      // Route to backend server
       const serverName = this.registry.findToolServer(name)
 
       if (!serverName) {
+        const status = this.connecting ? ' (some servers still connecting)' : ''
         this.logger.warn({ tool: name }, 'Tool not found')
         return {
-          content: [{ type: 'text' as const, text: `Error: tool "${name}" not found` }],
+          content: [{ type: 'text' as const, text: `Error: tool "${name}" not found${status}` }],
           isError: true,
         }
       }
@@ -197,9 +206,7 @@ export class PrismProxy {
 
       if (!result.ok) {
         this.logger.error({ tool: name, server: serverName, error: result.error.message }, 'Tool call failed')
-
         this.recordTrace(serverName, name, args ?? {}, null, startedAt, completedAt, durationMs, result.error.message)
-
         return {
           content: [{ type: 'text' as const, text: `Error: ${result.error.message}` }],
           isError: true,

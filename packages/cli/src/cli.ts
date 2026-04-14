@@ -7,25 +7,36 @@ import os from 'os'
 import path from 'path'
 import pino from 'pino'
 
+// Read version from package.json
+function getVersion(): string {
+  try {
+    const pkgPath = path.resolve(__dirname, '../package.json')
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) as { version: string }
+    return pkg.version
+  } catch {
+    return '0.0.0'
+  }
+}
+
+const VERSION = getVersion()
 const program = new Command()
 
 program
   .name('prism')
   .description('MCP Context Router + Agent Observability')
-  .version('0.2.2')
+  .version(VERSION)
 
 program
   .command('start')
   .description('Start the Prism MCP proxy')
   .option('-c, --config <path>', 'Path to prism.toml', 'prism.toml')
   .action(async (options: { config: string }) => {
-    // Logs MUST go to stderr — stdout is reserved for MCP stdio protocol
     const logger = pino({
       name: 'prism',
       transport: { target: 'pino-pretty', options: { destination: 2 } },
     })
 
-    logger.info('Starting Prism...')
+    logger.info({ version: VERSION }, 'Starting Prism...')
 
     const configResult = loadConfig(options.config)
     if (!configResult.ok) {
@@ -46,39 +57,23 @@ program
       logger,
     })
 
-    // Connect to all backend MCP servers
-    const initResult = await proxy.initialize()
-    if (!initResult.ok) {
-      logger.error({ error: initResult.error.message }, 'Failed to initialize proxy')
-      process.exit(1)
-      return
-    }
-
-    const tools = proxy.getAllTools()
-    const filtered = proxy.getFilteredTools()
-    logger.info({
-      totalTools: tools.length,
-      filteredTools: filtered.length,
-      tokenSavings: `${tools.length - filtered.length} tools excluded`,
-    }, 'Prism ready — serving via stdio')
-
-    // Start dashboard if port is configured
+    // Start dashboard immediately (before server connections)
     let dashboard: DashboardServer | undefined
     if (config.dashboardPort) {
       const traceStore = proxy.getTraceStore()
       if (traceStore) {
         dashboard = new DashboardServer(traceStore, logger, proxy.getRegistry())
         await dashboard.start(config.dashboardPort)
-        logger.info({ port: config.dashboardPort }, 'Dashboard started')
-      } else {
-        logger.warn('Dashboard requires [traces] section in config. Add: [traces]\\npath = "./prism-traces.db"')
       }
-    } else {
-      logger.info('Dashboard disabled (no [dashboard] port in config)')
     }
 
-    // Start serving MCP protocol via stdio
+    // Start serving MCP protocol via stdio IMMEDIATELY
+    // Agent connects right away — no waiting for backend servers
     await proxy.serve()
+    logger.info('Prism ready — serving via stdio')
+
+    // Connect backend servers in background — tools appear progressively
+    proxy.startConnecting()
 
     process.on('SIGINT', async () => {
       logger.info('Shutting down...')
@@ -170,7 +165,7 @@ program
 
     let totalTools = 0
     let totalTokens = 0
-    const allTools: { server: string; name: string; desc: string; tokens: number }[] = []
+    const allTools: { server: string; name: string; tokens: number }[] = []
 
     for (const server of servers) {
       if (server.enabled === false) continue
@@ -190,7 +185,7 @@ program
         for (const t of result.tools) {
           const fullText = `${t.name} ${t.description ?? ''} ${JSON.stringify(t.inputSchema)}`
           const tokens = Math.ceil(fullText.length / 4)
-          allTools.push({ server: server.name, name: t.name, desc: t.description ?? '', tokens })
+          allTools.push({ server: server.name, name: t.name, tokens })
           serverTokens += tokens
         }
 
@@ -210,7 +205,6 @@ program
     console.log('')
     console.log(`    Budget: ${budget.toLocaleString()} tokens`)
 
-    // Simulate compression (~30%) + greedy budget fit
     allTools.sort((a, b) => a.tokens - b.tokens)
     let prismTokens = 0
     let prismTools = 0
@@ -238,7 +232,6 @@ program
       if (excluded.length > 10) console.log(`      ... and ${excluded.length - 10} more`)
     }
 
-    // Results
     const saved = totalTokens - prismTokens
     const pct = totalTokens > 0 ? Math.round((saved / totalTokens) * 100) : 0
     const rawPct = Math.round((totalTokens / 200000) * 100)
@@ -252,18 +245,13 @@ program
     console.log(`    ─────────────────────────────────────`)
     console.log(`    Saved:         ${saved.toLocaleString()} tokens (${pct}% reduction)`)
     console.log('')
-
-    if (pct < 40) {
-      console.log('    Tip: Add more servers for a bigger impact. Run "prism add" in Claude Code.')
-    }
-    console.log('')
   })
 
 program
   .command('status')
   .description('Show Prism status')
   .action(() => {
-    console.log('Prism v0.2.2')
+    console.log(`Prism v${VERSION}`)
     console.log('Status: not running (use "prism start")')
   })
 

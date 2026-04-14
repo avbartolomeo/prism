@@ -31,15 +31,16 @@ describe('PrismProxy', () => {
       logger,
     })
 
-    await proxy.initialize()
-
     // Connect a client to the proxy via InMemoryTransport
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
 
-    // Access the internal MCP server to connect the transport
-    // We use a workaround: connect the server transport directly
     const mcpServer = (proxy as unknown as { mcpServer: { connect: (t: InMemoryTransport) => Promise<void> } }).mcpServer
     await mcpServer.connect(serverTransport)
+
+    // Start connecting backend servers and wait for them
+    proxy.startConnecting()
+    // Wait for background connections to finish
+    await new Promise(r => setTimeout(r, 3000))
 
     client = new Client({ name: 'test-agent', version: '1.0.0' }, { capabilities: {} })
     await client.connect(clientTransport)
